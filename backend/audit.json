@@ -1,0 +1,65 @@
+[
+  {
+    "timestamp": "2026-04-07T10:08:53.027Z",
+    "role": "Admin",
+    "action": "GENERATE_MINUTES",
+    "details": {
+      "blocks": 1
+    },
+    "environment": "Sovereign-Boardroom-Vault"
+  },
+  {
+    "timestamp": "2026-04-07T10:08:53.075Z",
+    "role": "Admin",
+    "action": "ARCHIVE_SESSION",
+    "details": {
+      "botId": "0058f3aa-b444-4f59-b543-4c85b2d0db8b"
+    },
+    "environment": "Sovereign-Boardroom-Vault"
+  },
+  {
+    "timestamp": "2026-04-07T10:08:54.884Z",
+    "role": "Admin",
+    "action": "GENERATE_MINUTES",
+    "details": {
+      "blocks": 1
+    },
+    "environment": "Sovereign-Boardroom-Vault"
+  },
+  {
+    "timestamp": "2026-04-07T10:09:08.108Z",
+    "role": "Admin",
+    "action": "GENERATE_MINUTES",
+    "details": {
+      "blocks": 1
+    },
+    "environment": "Sovereign-Boardroom-Vault"
+  },
+  {
+    "timestamp": "2026-04-07T10:09:08.909Z",
+    "role": "Admin",
+    "action": "GENERATE_MINUTES",
+    "details": {
+      "blocks": 1
+    },
+    "environment": "Sovereign-Boardroom-Vault"
+  },
+  {
+    "timestamp": "2026-04-07T10:09:22.727Z",
+    "role": "Admin",
+    "action": "GENERATE_MINUTES",
+    "details": {
+      "blocks": 1
+    },
+    "environment": "Sovereign-Boardroom-Vault"
+  },
+  {
+    "timestamp": "2026-04-07T10:09:23.505Z",
+    "role": "Admin",
+    "action": "GENERATE_MINUTES",
+    "details": {
+      "blocks": 1
+    },
+    "environment": "Sovereign-Boardroom-Vault"
+  }
+]

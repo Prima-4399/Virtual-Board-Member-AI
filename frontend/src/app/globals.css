@@ -1,0 +1,88 @@
+@import "tailwindcss";
+
+/* --- STITCH BOARDROOM FORMATTING --- */
+mark {
+  background-color: #1a4d2e;
+  /* Forest Green */
+  color: white;
+  padding: 0 4px;
+  border-radius: 4px;
+  font-weight: 700;
+}
+
+u {
+  text-decoration-color: #d4a373;
+  /* Warm Clay */
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+}
+
+:root {
+  /* Surface Layers (Light) */
+  --background: #fdf9f0;
+  /* Sandstone */
+  --foreground: #1c1c16;
+  /* Slate Ink */
+  --surface-low: #f7f3ea;
+  --surface-high: #ece8df;
+  --surface-highest: #e6e2d9;
+
+  /* Brand Colors */
+  --primary: #0f5238;
+  /* Forest Green */
+  --primary-foreground: #fdf9f0;
+  --secondary: #a53c07;
+  /* Warm Clay */
+  --secondary-foreground: #fdf9f0;
+  --accent: #344c41;
+  --muted: #707973;
+  --border: #bfc9c1;
+
+  --radius: 1.5rem;
+  /* 24px per Stitch Spec */
+}
+
+.dark {
+  --background: #1a1c1a;
+  /* Slate Dark Ink */
+  --foreground: #f1ede4;
+  --surface-low: #252725;
+  --surface-high: #2f312f;
+  --surface-highest: #383a38;
+
+  --primary: #95d4b3;
+  /* Mint Forest */
+  --primary-foreground: #002114;
+  --secondary: #ffb59a;
+  /* Bright Clay */
+  --secondary-foreground: #370e00;
+  --border: #404943;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface-low: var(--surface-low);
+  --color-surface-high: var(--surface-high);
+  --color-primary: var(--primary);
+  --color-secondary: var(--secondary);
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: 'Inter', sans-serif;
+  transition: background-color 0.4s ease, color 0.4s ease;
+}
+
+/* Elegant Bento Panel Utility */
+.bento-panel {
+  background-color: var(--surface-low);
+  border-radius: var(--radius);
+  padding: 32px;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.2s ease;
+}
+
+.bento-panel:hover {
+  background-color: var(--surface-high);
+}

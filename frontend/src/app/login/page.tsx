@@ -1,0 +1,163 @@
+"use client";
+
+import { useState } from 'react';
+import { createClient } from '@/utils/supabase';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { ShieldAlert, ArrowRight, Loader2, Lock, Mail } from 'lucide-react';
+
+export default function LoginPage() {
+    const [identifier, setIdentifier] = useState('');
+    const [password, setPassword] = useState('');
+    const [error, setError] = useState<string | null>(null);
+    const [loading, setLoading] = useState(false);
+
+    const router = useRouter();
+    const supabase = createClient();
+
+    const handleLogin = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setLoading(true);
+        setError(null);
+
+        let loginEmail = identifier;
+
+        // Resolve username if not an email
+        if (!identifier.includes('@')) {
+            const { data: profile, error: profileError } = await supabase
+                .from('profiles')
+                .select('email')
+                .eq('username', identifier.toLowerCase())
+                .single();
+
+            if (profileError || !profile) {
+                setError('Identifier not found in boardroom directory.');
+                setLoading(false);
+                return;
+            }
+            loginEmail = (profile as any).email;
+        }
+
+        const { error } = await supabase.auth.signInWithPassword({
+            email: loginEmail,
+            password,
+        });
+
+        if (error) {
+            setError(error.message);
+            setLoading(false);
+        } else {
+            router.push('/');
+            router.refresh();
+        }
+    };
+
+    const handleGoogleLogin = async () => {
+        const { error } = await supabase.auth.signInWithOAuth({
+            provider: 'google',
+            options: {
+                redirectTo: `${window.location.origin}/auth/callback`,
+            },
+        });
+        if (error) setError(error.message);
+    };
+
+    return (
+        <div className="flex flex-col items-center justify-center min-h-[calc(100vh-80px)] px-6 relative">
+            <div className="max-w-md w-full space-y-10 py-12">
+                {/* Branding */}
+                <div className="text-center space-y-4">
+                    <div className="w-16 h-16 rounded-[24px] bg-primary/10 flex items-center justify-center text-primary mx-auto mb-8 ring-8 ring-primary/5">
+                        <Lock className="w-8 h-8" />
+                    </div>
+                    <h1 className="text-4xl font-serif font-medium text-foreground">Secure Login</h1>
+                    <p className="text-foreground/40 text-sm font-medium">Access your boardroom intelligence suite</p>
+                </div>
+
+                {/* Form */}
+                <div className="space-y-6">
+                    <form onSubmit={handleLogin} className="space-y-6">
+                        {error && (
+                            <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center gap-3 text-red-500 text-sm animate-in fade-in zoom-in-95">
+                                <ShieldAlert className="w-4 h-4 shrink-0" />
+                                <span>{error}</span>
+                            </div>
+                        )}
+
+                        <div className="space-y-4">
+                            <div className="space-y-2 group">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-primary ml-1 italic group-focus-within:text-foreground transition-colors">Boardroom Identifier</label>
+                                <div className="relative">
+                                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground/40" />
+                                    <input
+                                        type="text"
+                                        required
+                                        placeholder="Email or Username"
+                                        value={identifier}
+                                        onChange={(e) => setIdentifier(e.target.value)}
+                                        className="w-full h-14 pl-12 pr-4 rounded-2xl bg-white/[0.02] border border-white/5 focus:border-primary focus:bg-white/[0.04] text-foreground outline-none transition-all placeholder:text-foreground/10"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="space-y-2 group">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-primary ml-1 italic">Secure Password</label>
+                                <div className="relative">
+                                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground/40" />
+                                    <input
+                                        type="password"
+                                        required
+                                        placeholder="••••••••"
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        className="w-full h-14 pl-12 pr-4 rounded-2xl bg-white/[0.02] border border-white/5 focus:border-primary focus:bg-white/[0.04] text-foreground outline-none transition-all"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        <button
+                            disabled={loading}
+                            className="w-full h-14 bg-primary hover:bg-primary/95 text-background rounded-2xl font-black text-sm uppercase tracking-widest flex items-center justify-center gap-3 transition-all active:scale-95 disabled:opacity-50 disabled:active:scale-100"
+                        >
+                            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (
+                                <>
+                                    <span>Verify Credentials</span>
+                                    <ArrowRight className="w-4 h-4" />
+                                </>
+                            )}
+                        </button>
+                    </form>
+
+                    {/* Divider */}
+                    <div className="flex items-center gap-4 py-2">
+                        <div className="h-px flex-1 bg-white/5" />
+                        <span className="text-[10px] font-black text-foreground/20 uppercase tracking-widest">or continue with</span>
+                        <div className="h-px flex-1 bg-white/5" />
+                    </div>
+
+                    {/* OAuth Area */}
+                    <button
+                        onClick={handleGoogleLogin}
+                        className="w-full h-14 rounded-2xl border border-white/5 bg-white/[0.02] hover:bg-white/[0.05] flex items-center justify-center gap-4 transition-all group active:scale-95"
+                    >
+                        <svg className="w-5 h-5 transition-transform group-hover:scale-110" viewBox="0 0 24 24">
+                            <path fill="#EA4335" d="M5.266 9.765A7.077 7.077 0 0 1 12 4.909c1.69 0 3.218.6 4.418 1.582L19.91 3C17.782 1.145 15.055 0 12 0 7.33 0 3.305 2.722 1.34 6.691l3.926 3.074z" />
+                            <path fill="#34A853" d="M12 24c3.079 0 5.861-1.011 8.005-2.725l-4.129-3.454C14.734 18.507 13.461 19.091 12 19.091c-2.883 0-5.334-1.948-6.204-4.577L1.87 17.583C3.834 21.552 7.859 24.274 12 24z" />
+                            <path fill="#4285F4" d="M23.491 12.273c0-.827-.074-1.624-.21-2.394H12v4.524h6.442c-.279 1.472-1.11 2.722-2.361 3.56l4.129 3.454c2.413-2.222 3.845-5.485 3.845-9.144z" />
+                            <path fill="#FBBC05" d="M5.796 14.514a7.076 7.076 0 0 1-.377-2.12c0-.736.13-1.442.366-2.094L1.86 7.227C.674 9.605 0 12.26 0 15c0 2.74.674 5.395 1.86 7.773l3.936-3.076a7.077 7.077 0 0 1-.365-2.183z" />
+                        </svg>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-foreground/60">Executive Google Account</span>
+                    </button>
+                </div>
+
+                <div className="text-center">
+                    <p className="text-foreground/40 text-xs font-bold">
+                        Don't have access? {' '}
+                        <Link href="/signup" className="text-primary hover:underline underline-offset-4">Sign up for a Suite</Link>
+                    </p>
+                </div>
+            </div>
+        </div>
+    );
+}
