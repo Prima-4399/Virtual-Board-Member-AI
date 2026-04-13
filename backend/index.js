@@ -29,7 +29,7 @@ const recallClient = axios.create({
 });
 
 const multer = require('multer');
-const { indexDocument, queryIntelligence, indexMeetingTranscript, generateMinutes, extractActions } = require('./rag_engine');
+const { indexDocument, queryIntelligence, indexMeetingTranscript, generateMinutes, extractActions, generateTitle } = require('./rag_engine');
 const { resolveParticipants, persistAttendees } = require('./participant_resolver');
 const { createClient } = require('@supabase/supabase-js');
 const { v4: uuidv4 } = require('uuid');
@@ -317,10 +317,19 @@ app.post('/api/bot/:id/minutes', async (req, res) => {
 
         const minutes = await generateMinutes(fullText, attendees);
 
-        const { error: updErr } = await supabase.from('meetings').update({ minutes }).eq('id', meeting.id);
+        // Generate smart title from minutes
+        let smartTitle;
+        try {
+            smartTitle = await generateTitle(minutes, meeting.created_at);
+        } catch (titleErr) {
+            console.warn('[TITLE] Title generation failed, keeping existing title:', titleErr.message);
+            smartTitle = meeting.title;
+        }
+
+        const { error: updErr } = await supabase.from('meetings').update({ minutes, title: smartTitle }).eq('id', meeting.id);
         if (updErr) throw new Error('Database update failed (check if "minutes" column exists): ' + updErr.message);
 
-        res.json({ minutes });
+        res.json({ minutes, title: smartTitle });
     } catch (error) {
         console.error('[MINUTES ERROR]', error);
         res.status(500).json({ error: error.message, detail: 'Ensure you ran the SQL migration to add the "minutes" column.' });

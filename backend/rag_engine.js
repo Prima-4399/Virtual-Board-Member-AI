@@ -362,6 +362,53 @@ async function extractActions(transcript, attendees = []) {
     }
 }
 
+async function generateTitle(minutes, createdAt) {
+    const date = new Date(createdAt);
+    const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
+    const monthDay = date.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+    const time = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    const datePart = `${dayName}, ${monthDay}, ${time}`;
+
+    const systemPrompt = `Extract the primary topic of this board meeting from the minutes below.
+Return ONLY a 3-5 word topic summary. No punctuation at the end, no explanation.
+Examples: "Q2 Revenue Review", "New Hire Approvals", "Strategic Partnership Discussion"`;
+
+    try {
+        console.log('[TITLE] Generating smart title via Claude...');
+        if (!process.env.ANTHROPIC_API_KEY) throw new Error('Key missing');
+
+        const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY.trim() });
+        const response = await anthropic.messages.create({
+            model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6",
+            max_tokens: 30,
+            system: systemPrompt,
+            messages: [{ role: "user", content: minutes.substring(0, 2000) }]
+        });
+
+        const topic = response.content[0].text.trim().replace(/[.!,;:]+$/, '');
+        console.log(`[TITLE] Generated: "${topic} — ${datePart}"`);
+        return `${topic} — ${datePart}`;
+    } catch (err) {
+        console.warn('[TITLE] Claude failed, trying Groq...', err.message);
+        try {
+            const groqRes = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
+                model: process.env.GROQ_MODEL || "llama-3.1-70b-versatile",
+                messages: [
+                    { role: "system", content: systemPrompt },
+                    { role: "user", content: minutes.substring(0, 2000) }
+                ],
+                max_tokens: 30
+            }, { headers: { 'Authorization': `Bearer ${process.env.GROQ_API_KEY}` } });
+
+            const topic = groqRes.data.choices[0].message.content.trim().replace(/[.!,;:]+$/, '');
+            return `${topic} — ${datePart}`;
+        } catch (groqErr) {
+            console.error('[TITLE] Both LLMs failed, using date-only title');
+            return `Board Meeting — ${datePart}`;
+        }
+    }
+}
+
 module.exports = {
     indexDocument,
     indexMeetingTranscript,
@@ -369,6 +416,7 @@ module.exports = {
     queryIntelligence,
     generateMinutes,
     extractActions,
+    generateTitle,
     formatRole,
     BOARD_ROLE_LABELS
 };

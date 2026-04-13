@@ -35,21 +35,52 @@ export async function POST(req: Request) {
 
         if (recallError) throw recallError;
 
-        // 3. Construct High-Resolution Executive Context
-        const context = globalChunks?.map((c: any) => c.content).join('\n\n') || "No shared archives found for your organization.";
+        // 3. MEETING HISTORY RECALL
+        const { data: recentMeetings } = await supabase
+            .from('meetings')
+            .select('title, minutes, actions, attendees_summary, created_at')
+            .eq('organization_id', organization_id)
+            .not('minutes', 'is', null)
+            .order('created_at', { ascending: false })
+            .limit(5);
 
-        // 4. Dual-Intelligence Logic (Claude + GROQ)
+        // 4. Construct High-Resolution Executive Context
+        const documentContext = globalChunks?.map((c: any) => c.content).join('\n\n') || "No shared archives found.";
+
+        const meetingContext = recentMeetings?.map((m: any) => {
+            const date = new Date(m.created_at).toLocaleDateString('en-US', {
+                weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+                hour: 'numeric', minute: '2-digit'
+            });
+            const attendeeNames = m.attendees_summary?.map((a: any) => `${a.name}${a.board_role ? ' (' + a.board_role + ')' : ''}`).join(', ') || 'Unknown';
+            const actionsText = m.actions?.map((a: any) => `- ${a.task} (Owner: ${a.owner})`).join('\n') || 'None recorded';
+            const minutesTruncated = (m.minutes || '').replace(/<[^>]*>/g, ' ').substring(0, 1200);
+            return `MEETING: ${m.title}\nDATE: ${date}\nATTENDEES: ${attendeeNames}\nSUMMARY:\n${minutesTruncated}\nACTION ITEMS:\n${actionsText}`;
+        }).join('\n\n---\n\n') || '';
+
+        // 5. Dual-Intelligence Logic (Claude + GROQ)
         const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
         const GROQ_API_KEY = process.env.GROQ_API_KEY;
         const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.1-8b-instant";
 
         const systemPrompt = `You are VB Intelligence, a strategic Virtual Board Member providing advisor reasoning.
-        
-        SHARED CORPORATE KNOWLEDGE BASE:
-        ${context}
-        
-        OBJECTIVE:
-        Examine the archives above and use them to address the user's query. Cite specific details like "$4.2M Singapore adjustment" or document names if they exist. Be professional, strategic, and concise.`;
+
+${meetingContext ? `RECENT BOARD MEETINGS:\n${meetingContext}\n\n` : ''}CORPORATE DOCUMENTS:
+${documentContext}
+
+OBJECTIVE:
+Answer the user's query using the meeting history and corporate documents above.
+For temporal queries ("last meeting", "Tuesday's meeting", "what was discussed on [date]"), use the RECENT BOARD MEETINGS section and cite the specific meeting title and date.
+For general knowledge queries, use the CORPORATE DOCUMENTS section.
+Cite specific details, names, figures, and document names when available. Be professional, strategic, and concise.
+
+CRITICAL FORMATTING RULES:
+1. NEVER use asterisks (*), underscores (_), or hash symbols (#).
+2. NEVER use markdown table syntax (no | pipes or --- lines).
+3. Use ONLY plain HTML for formatting: <strong> for bold, <em> for emphasis, <br> for line breaks.
+4. Use <ul><li> for bullet lists, <ol><li> for numbered lists.
+5. Use <table><tr><th>/<td> for tabular data if needed.
+6. Keep responses clear, concise, and in a natural conversational tone.`;
 
         // CLAUDE PRIMARY
         if (ANTHROPIC_API_KEY) {
@@ -66,7 +97,7 @@ export async function POST(req: Request) {
                 });
                 const aiData = await anthropicResponse.json();
                 if (aiData.content?.[0]?.text) {
-                    return NextResponse.json({ reply: aiData.content[0].text, context_sources: globalChunks?.length || 0 });
+                    return NextResponse.json({ reply: aiData.content[0].text, context_sources: globalChunks?.length || 0, meeting_sources: recentMeetings?.length || 0 });
                 }
             } catch (claudeErr) { console.error('Claude Failover...'); }
         }
@@ -88,9 +119,10 @@ export async function POST(req: Request) {
         const groqData = await groqResponse.json();
         const reply = groqData.choices?.[0]?.message?.content || "Boardroom Advisor Engine Timeout.";
 
-        return NextResponse.json({ 
-            reply: reply, 
+        return NextResponse.json({
+            reply: reply,
             context_sources: globalChunks?.length || 0,
+            meeting_sources: recentMeetings?.length || 0,
             engine: 'executive_fallback'
         });
 

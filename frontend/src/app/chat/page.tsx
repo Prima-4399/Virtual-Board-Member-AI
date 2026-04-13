@@ -124,9 +124,16 @@ export default function VirtualBoardChat() {
                             {m.role === 'assistant' ? <Cpu className="w-6 h-6" /> : <UserCircle className="w-6 h-6" />}
                         </div>
                         <div className="space-y-4 max-w-2xl">
-                            <div className={`text-lg font-serif leading-relaxed ${m.role === 'assistant' ? 'text-foreground/80 italic font-medium' : 'text-foreground/60'}`}>
-                                {m.content}
-                            </div>
+                            {m.role === 'assistant' ? (
+                                <div
+                                    className="text-base leading-relaxed text-foreground/80 prose prose-invert max-w-none prose-li:text-foreground/70 prose-strong:text-foreground prose-table:text-sm prose-th:text-primary prose-th:text-left prose-td:py-1 prose-td:pr-4"
+                                    dangerouslySetInnerHTML={{ __html: m.content }}
+                                />
+                            ) : (
+                                <div className="text-lg font-serif leading-relaxed text-foreground/60">
+                                    {m.content}
+                                </div>
+                            )}
                             {m.role === 'assistant' && idx > 0 && (
                                 <div className="flex items-center gap-4 text-[9px] uppercase font-black tracking-[0.2em] text-primary/40 italic font-bold">
                                     <BookOpen className="w-3 h-3" />
