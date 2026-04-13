@@ -40,8 +40,8 @@ export async function POST(req: Request) {
 
         // 4. Dual-Intelligence Logic (Claude + GROQ)
         const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-        const GROQ_API_KEY = "GROQ_KEY_REDACTED";
-        const GROQ_MODEL = "llama-3.1-8b-instant";
+        const GROQ_API_KEY = process.env.GROQ_API_KEY;
+        const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.1-8b-instant";
 
         const systemPrompt = `You are VB Intelligence, a strategic Virtual Board Member providing advisor reasoning.
         
