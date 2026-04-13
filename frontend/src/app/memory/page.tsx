@@ -6,7 +6,7 @@ import { FileText, Upload, Search, Trash2, Database, Plus, RotateCcw, ExternalLi
 import { format } from 'date-fns';
 import axios from 'axios';
 
-const BACKEND_URL = 'http://localhost:3001';
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
 
 export default function InstitutionalMemory() {
     const [documents, setDocuments] = useState<any[]>([]);

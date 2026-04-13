@@ -6,7 +6,7 @@ import { Shield, Users, Copy, CheckCircle2, RotateCcw, UserCircle, Briefcase, La
 import { useRouter } from 'next/navigation';
 import axios from 'axios';
 
-const BACKEND_URL = 'http://localhost:3001';
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
 
 const BOARD_ROLES: Record<string, string> = {
     board_chair: 'Board Chair',

@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { Video, Database, Cpu, LogOut, Plus, ChevronRight, ShieldCheck, BookOpen, History, CheckCircle, Clock, User } from 'lucide-react'
 import axios from 'axios'
 import { createClient } from '@/utils/supabase'
-const BACKEND_URL = 'http://localhost:3001'
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001'
 
 interface TranscriptWord {
     text: string

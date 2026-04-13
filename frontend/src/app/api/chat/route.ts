@@ -58,7 +58,7 @@ export async function POST(req: Request) {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
                     body: JSON.stringify({
-                        model: "claude-3-5-sonnet-20240620",
+                        model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6",
                         max_tokens: 1024,
                         system: systemPrompt,
                         messages: [{ role: "user", content: message }]

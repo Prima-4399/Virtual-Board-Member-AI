@@ -221,7 +221,7 @@ RESPONSE STRUCTURE:
 
     try {
         const response = await anthropic.messages.create({
-            model: process.env.ANTHROPIC_MODEL || "claude-3-5-sonnet-20240620",
+            model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6",
             max_tokens: 1024,
             messages: [{ role: "user", content: prompt }]
         });
@@ -271,7 +271,7 @@ async function generateMinutes(transcript, attendees = []) {
         
         const anthropicHeader = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY.trim() });
         const response = await anthropicHeader.messages.create({
-            model: "claude-3-5-sonnet-20240620",
+            model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6",
             max_tokens: 1500,
             system: systemPrompt,
             messages: [{ role: "user", content: `SESSION TRANSCRIPT:\n\n${transcript}` }]
@@ -330,7 +330,7 @@ async function extractActions(transcript, attendees = []) {
         
         const anthropicHeader = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY.trim() });
         const response = await anthropicHeader.messages.create({
-            model: "claude-3-5-sonnet-20240620",
+            model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6",
             max_tokens: 1500,
             system: systemPrompt,
             messages: [{ role: "user", content: `TRANSCRIPT:\n\n${transcript}` }]
