@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { createClient } from '@/utils/supabase';
-import { Video, FileText, Calendar, Clock, ChevronRight, LayoutDashboard, Search, Trash2, ShieldAlert, Users } from 'lucide-react';
+import { Video, FileText, Calendar, Clock, ChevronRight, LayoutDashboard, Search, Trash2, ShieldAlert, Users, Cpu, CheckCircle, User, X } from 'lucide-react';
 
 const BOARD_ROLE_COLORS: Record<string, string> = {
     'Board Chair': 'bg-amber-500/20 text-amber-400',
@@ -18,8 +18,18 @@ export default function MeetingHistory() {
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [organization, setOrganization] = useState<any>(null);
+    const [selectedMeeting, setSelectedMeeting] = useState<any | null>(null);
     const [selectedTranscript, setSelectedTranscript] = useState<any[] | null>(null);
     const [selectedMeetingAttendees, setSelectedMeetingAttendees] = useState<Record<string, string>>({});
+    const [modalTab, setModalTab] = useState<'transcript' | 'minutes' | 'actions'>('transcript');
+
+    const BOARD_ROLE_KEY_COLORS: Record<string, string> = {
+        board_chair: 'bg-amber-500/20 text-amber-400',
+        director: 'bg-primary/20 text-primary',
+        company_secretary: 'bg-blue-500/20 text-blue-400',
+        legal_compliance: 'bg-purple-500/20 text-purple-400',
+        ceo_exec: 'bg-emerald-500/20 text-emerald-400'
+    };
 
     const supabase = createClient();
 
@@ -58,29 +68,39 @@ export default function MeetingHistory() {
         m.title.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    const openTranscript = (meeting: any) => {
-        if (!meeting.transcript) {
-            alert("This meeting has no transcript recorded yet.");
-            return;
-        }
-        try {
-            const data = typeof meeting.transcript === 'string'
-                ? JSON.parse(meeting.transcript)
-                : meeting.transcript;
-            setSelectedTranscript(data);
+    const openMeeting = (meeting: any) => {
+        setSelectedMeeting(meeting);
+        setModalTab('transcript');
 
-            // Build attendees role map
-            const roleMap: Record<string, string> = {};
-            if (meeting.attendees_summary) {
-                for (const a of meeting.attendees_summary) {
-                    if (a.board_role) roleMap[a.name] = a.board_role;
-                }
+        // Parse transcript
+        try {
+            if (meeting.transcript) {
+                const data = typeof meeting.transcript === 'string'
+                    ? JSON.parse(meeting.transcript)
+                    : meeting.transcript;
+                setSelectedTranscript(data);
+            } else {
+                setSelectedTranscript(null);
             }
-            setSelectedMeetingAttendees(roleMap);
         } catch (e) {
             console.error("Failed to parse transcript", e);
-            alert("Transcript data is corrupted.");
+            setSelectedTranscript(null);
         }
+
+        // Build attendees role map
+        const roleMap: Record<string, string> = {};
+        if (meeting.attendees_summary) {
+            for (const a of meeting.attendees_summary) {
+                if (a.board_role) roleMap[a.name] = a.board_role;
+            }
+        }
+        setSelectedMeetingAttendees(roleMap);
+    };
+
+    const closeMeeting = () => {
+        setSelectedMeeting(null);
+        setSelectedTranscript(null);
+        setSelectedMeetingAttendees({});
     };
 
     if (loading) return (
@@ -122,43 +142,160 @@ export default function MeetingHistory() {
                 </div>
             </header>
 
-            {/* Transcript Modal */}
-            {selectedTranscript && (
+            {/* Meeting Detail Modal */}
+            {selectedMeeting && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-8 bg-background/80 backdrop-blur-xl animate-in fade-in duration-300">
-                    <div className="bg-background border border-white/10 w-full max-w-4xl max-h-[80vh] rounded-[48px] overflow-hidden flex flex-col shadow-2xl shadow-black">
-                        <div className="p-8 border-b border-white/5 flex items-center justify-between">
-                            <h2 className="text-2xl font-serif">Meeting Minutes</h2>
-                            <button 
-                                onClick={() => setSelectedTranscript(null)}
-                                className="px-6 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-[10px] font-black uppercase tracking-widest transition-all"
-                            >
-                                Close Ledger
-                            </button>
-                        </div>
-                        <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar bg-white/[0.01]">
-                            {selectedTranscript.map((entry: any, i: number) => {
-                                const speakerName = entry.participant?.name || 'Unknown Participant';
-                                const speakerRole = selectedMeetingAttendees[speakerName];
-                                const roleColor = speakerRole ? (BOARD_ROLE_COLORS[speakerRole] || 'bg-white/5 text-foreground/40') : '';
-                                return (
-                                <div key={i} className="space-y-2 border-l-2 border-primary/20 pl-6 py-2">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-[8px] font-black text-primary">
-                                            {speakerName.charAt(0)}
-                                        </div>
-                                        <p className="text-[10px] font-black text-primary uppercase tracking-widest">{speakerName}</p>
-                                        {speakerRole && (
-                                            <span className={`text-[8px] uppercase font-black tracking-widest px-2 py-0.5 rounded-full ${roleColor}`}>
-                                                {speakerRole}
-                                            </span>
+                    <div className="bg-background border border-white/10 w-full max-w-5xl max-h-[85vh] rounded-[48px] overflow-hidden flex flex-col shadow-2xl shadow-black">
+                        {/* Header */}
+                        <div className="p-8 border-b border-white/5">
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="space-y-1">
+                                    <h2 className="text-2xl font-serif">{selectedMeeting.title}</h2>
+                                    <div className="flex items-center gap-4 text-[10px] uppercase font-black tracking-widest text-foreground/30">
+                                        <span>{format(new Date(selectedMeeting.created_at), 'MMMM do, yyyy · HH:mm')}</span>
+                                        {selectedMeeting.attendees_summary && (
+                                            <span>{selectedMeeting.attendees_summary.length} participants</span>
                                         )}
                                     </div>
-                                    <p className="text-foreground/70 leading-relaxed font-medium italic">
-                                        {entry.words?.map((w: any) => w.text).join(' ')}
-                                    </p>
                                 </div>
-                                );
-                            })}
+                                <button
+                                    onClick={closeMeeting}
+                                    className="p-3 rounded-xl bg-white/5 hover:bg-white/10 text-foreground/40 hover:text-foreground transition-all"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            {/* Attendees */}
+                            {selectedMeeting.attendees_summary && selectedMeeting.attendees_summary.length > 0 && (
+                                <div className="flex items-center gap-2 flex-wrap mb-4">
+                                    <Users className="w-3 h-3 text-foreground/20" />
+                                    {selectedMeeting.attendees_summary.map((a: any, idx: number) => (
+                                        <span
+                                            key={idx}
+                                            className={`text-[8px] uppercase font-black tracking-widest px-2 py-0.5 rounded-full ${a.board_role ? (BOARD_ROLE_COLORS[a.board_role] || 'bg-white/5 text-foreground/40') : 'bg-white/5 text-foreground/30'}`}
+                                        >
+                                            {a.name} {a.board_role ? `· ${a.board_role}` : ''}
+                                        </span>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Tabs */}
+                            <div className="flex gap-2 bg-white/[0.02] p-1 rounded-xl">
+                                <button
+                                    onClick={() => setModalTab('transcript')}
+                                    className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${modalTab === 'transcript' ? 'bg-background text-primary shadow-sm' : 'text-foreground/30 hover:text-foreground/60'}`}
+                                >
+                                    Transcript
+                                </button>
+                                <button
+                                    onClick={() => setModalTab('minutes')}
+                                    className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${modalTab === 'minutes' ? 'bg-background text-primary shadow-sm' : 'text-foreground/30 hover:text-foreground/60'}`}
+                                >
+                                    AI Minutes
+                                </button>
+                                <button
+                                    onClick={() => setModalTab('actions')}
+                                    className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${modalTab === 'actions' ? 'bg-background text-primary shadow-sm' : 'text-foreground/30 hover:text-foreground/60'}`}
+                                >
+                                    Actions
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Tab Content */}
+                        <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-white/[0.01]">
+                            {modalTab === 'transcript' ? (
+                                selectedTranscript && selectedTranscript.length > 0 ? (
+                                    <div className="space-y-6">
+                                        {selectedTranscript.map((entry: any, i: number) => {
+                                            const speakerName = entry.participant?.name || 'Unknown Participant';
+                                            const speakerRole = selectedMeetingAttendees[speakerName];
+                                            const roleColor = speakerRole ? (BOARD_ROLE_COLORS[speakerRole] || 'bg-white/5 text-foreground/40') : '';
+                                            return (
+                                                <div key={i} className="space-y-2 border-l-2 border-primary/20 pl-6 py-2">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-[8px] font-black text-primary">
+                                                            {speakerName.charAt(0)}
+                                                        </div>
+                                                        <p className="text-[10px] font-black text-primary uppercase tracking-widest">{speakerName}</p>
+                                                        {speakerRole && (
+                                                            <span className={`text-[8px] uppercase font-black tracking-widest px-2 py-0.5 rounded-full ${roleColor}`}>
+                                                                {speakerRole}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-foreground/70 leading-relaxed font-medium italic">
+                                                        {entry.words?.map((w: any) => w.text).join(' ')}
+                                                    </p>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col items-center justify-center py-24 text-center space-y-4 opacity-30">
+                                        <FileText className="w-16 h-16" />
+                                        <h3 className="text-xl font-serif italic">No Transcript Available</h3>
+                                        <p className="text-sm max-w-xs">This meeting has no recorded transcript.</p>
+                                    </div>
+                                )
+                            ) : modalTab === 'minutes' ? (
+                                selectedMeeting.minutes ? (
+                                    <div
+                                        dangerouslySetInnerHTML={{ __html: selectedMeeting.minutes }}
+                                        className="prose prose-invert max-w-none prose-h3:text-primary prose-h3:text-2xl prose-h3:font-serif prose-h3:mb-2 prose-li:text-foreground/70 font-serif text-lg leading-relaxed text-foreground/80"
+                                    />
+                                ) : (
+                                    <div className="flex flex-col items-center justify-center py-24 text-center space-y-4 opacity-30">
+                                        <Cpu className="w-16 h-16" />
+                                        <h3 className="text-xl font-serif italic">No AI Minutes Generated</h3>
+                                        <p className="text-sm max-w-xs">Minutes were not generated for this meeting session.</p>
+                                    </div>
+                                )
+                            ) : (
+                                selectedMeeting.actions && selectedMeeting.actions.length > 0 ? (
+                                    <div className="space-y-4">
+                                        {(typeof selectedMeeting.actions === 'string' ? JSON.parse(selectedMeeting.actions) : selectedMeeting.actions).map((action: any, idx: number) => (
+                                            <div key={idx} className={`p-6 rounded-2xl border transition-all flex items-start justify-between ${action.status === 'done' ? 'bg-primary/5 border-primary/20 opacity-60' : 'bg-white/[0.02] border-white/5'}`}>
+                                                <div className="flex items-start gap-4">
+                                                    <div className={`mt-1 w-6 h-6 rounded-lg border-2 flex items-center justify-center ${action.status === 'done' ? 'bg-primary border-primary text-background' : 'border-foreground/20'}`}>
+                                                        {action.status === 'done' && <CheckCircle className="w-4 h-4" />}
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <p className={`text-lg font-bold leading-none ${action.status === 'done' ? 'line-through text-foreground/40' : 'text-foreground'}`}>
+                                                            {action.task}
+                                                        </p>
+                                                        <div className="flex items-center gap-4">
+                                                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/5 border border-primary/10 text-[9px] font-black uppercase tracking-widest text-primary">
+                                                                <User className="w-2.5 h-2.5" />
+                                                                {action.owner || 'Unassigned'}
+                                                            </div>
+                                                            {action.owner_role && action.owner_role !== 'guest' && (
+                                                                <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest ${BOARD_ROLE_KEY_COLORS[action.owner_role] || 'bg-white/5 text-foreground/40'}`}>
+                                                                    {action.owner_role.replace(/_/g, ' ')}
+                                                                </div>
+                                                            )}
+                                                            {action.deadline && action.deadline !== 'N/A' && (
+                                                                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-[9px] font-black uppercase tracking-widest text-foreground/40">
+                                                                    <Clock className="w-2.5 h-2.5" />
+                                                                    {action.deadline}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col items-center justify-center py-24 text-center space-y-4 opacity-30">
+                                        <CheckCircle className="w-16 h-16" />
+                                        <h3 className="text-xl font-serif italic">No Action Items</h3>
+                                        <p className="text-sm max-w-xs">No action items were extracted from this meeting.</p>
+                                    </div>
+                                )
+                            )}
                         </div>
                     </div>
                 </div>
@@ -228,11 +365,11 @@ export default function MeetingHistory() {
                                     </a>
                                 )}
                                 <button
-                                    onClick={() => openTranscript(meeting)}
+                                    onClick={() => openMeeting(meeting)}
                                     className="h-12 px-6 rounded-xl bg-primary/10 hover:bg-primary text-primary hover:text-background flex items-center gap-2 text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 border border-primary/10"
                                 >
                                     <FileText className="w-4 h-4" />
-                                    <span>Transcript</span>
+                                    <span>View Details</span>
                                 </button>
                                 <button className="p-3 rounded-xl bg-red-500/5 hover:bg-red-500/20 text-red-500/40 hover:text-red-500 transition-all border border-red-500/5">
                                     <Trash2 className="w-4 h-4" />
