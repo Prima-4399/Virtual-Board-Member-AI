@@ -27,6 +27,7 @@ const recallClient = axios.create({
 
 const multer = require('multer');
 const { indexDocument, queryIntelligence, indexMeetingTranscript, generateMinutes, extractActions } = require('./rag_engine');
+const { resolveParticipants, persistAttendees } = require('./participant_resolver');
 const { createClient } = require('@supabase/supabase-js');
 const { v4: uuidv4 } = require('uuid');
 
@@ -167,7 +168,7 @@ app.get('/api/bot/:id/transcript', async (req, res) => {
             // Update if transcript has grown
             if (newTranscriptText.length > currentTranscriptLength) {
                 console.log(`[SYNC] Updating meeting: ${existingMeeting.id} for bot ${id}`);
-                
+
                 const { error: updError } = await supabase
                     .from('meetings')
                     .update({
@@ -184,6 +185,15 @@ app.get('/api/bot/:id/transcript', async (req, res) => {
                         existingMeeting.organization_id,
                         existingMeeting.id
                     );
+
+                    // Resolve participants and persist attendee records
+                    try {
+                        const attendees = await resolveParticipants(transcriptSegments, existingMeeting.organization_id);
+                        await persistAttendees(existingMeeting.id, attendees);
+                        console.log(`[RESOLVER] Resolved ${attendees.filter(a => a.matched).length}/${attendees.length} participants for meeting ${existingMeeting.id}`);
+                    } catch (resolveErr) {
+                        console.error('[RESOLVER] Participant resolution failed:', resolveErr.message);
+                    }
                 }
             }
         }
@@ -294,7 +304,15 @@ app.post('/api/bot/:id/minutes', async (req, res) => {
 
         if (!fullText.trim()) throw new Error('Transcript text is empty');
 
-        const minutes = await generateMinutes(fullText);
+        // Resolve participants for role-aware minutes
+        let attendees = [];
+        try {
+            attendees = await resolveParticipants(transcriptData, meeting.organization_id);
+        } catch (resolveErr) {
+            console.warn('[MINUTES] Participant resolution failed, generating without roles:', resolveErr.message);
+        }
+
+        const minutes = await generateMinutes(fullText, attendees);
 
         const { error: updErr } = await supabase.from('meetings').update({ minutes }).eq('id', meeting.id);
         if (updErr) throw new Error('Database update failed (check if "minutes" column exists): ' + updErr.message);
@@ -338,7 +356,15 @@ app.post('/api/bot/:id/actions', async (req, res) => {
             return `[${name}]: ${words}`;
         }).join('\n');
 
-        const actions = await extractActions(fullText);
+        // Resolve participants for role-aware action extraction
+        let attendees = [];
+        try {
+            attendees = await resolveParticipants(transcriptData, meeting.organization_id);
+        } catch (resolveErr) {
+            console.warn('[ACTIONS] Participant resolution failed, extracting without roles:', resolveErr.message);
+        }
+
+        const actions = await extractActions(fullText, attendees);
 
         await supabase.from('meetings').update({ actions }).eq('id', meeting.id);
 
@@ -358,6 +384,85 @@ app.patch('/api/meetings/:id/actions', async (req, res) => {
         if (error) throw error;
         res.json({ message: 'Actions updated' });
     } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// -- BOARD ROLE MANAGEMENT --
+
+const VALID_BOARD_ROLES = ['board_chair', 'director', 'company_secretary', 'legal_compliance', 'ceo_exec'];
+
+// Assign board role and display name
+app.patch('/api/profiles/:id/board-role', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { board_role, display_name } = req.body;
+
+        if (board_role && !VALID_BOARD_ROLES.includes(board_role)) {
+            return res.status(400).json({ error: `Invalid board_role. Must be one of: ${VALID_BOARD_ROLES.join(', ')}` });
+        }
+
+        const updates = {};
+        if (board_role) updates.board_role = board_role;
+        if (display_name !== undefined) updates.display_name = display_name;
+
+        const { data, error } = await supabase
+            .from('profiles')
+            .update(updates)
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) throw error;
+        res.json(data);
+    } catch (error) {
+        console.error('[BOARD ROLE ERROR]', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get meeting attendees
+app.get('/api/meetings/:id/attendees', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { data, error } = await supabase
+            .from('meeting_attendees')
+            .select('*')
+            .eq('meeting_id', id)
+            .order('speaking_segments', { ascending: false });
+
+        if (error) throw error;
+        res.json(data || []);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Re-resolve participants for a meeting (after display_name updates)
+app.post('/api/meetings/:id/resolve-participants', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { data: meeting, error: mErr } = await supabase
+            .from('meetings')
+            .select('*')
+            .eq('id', id)
+            .maybeSingle();
+
+        if (mErr) throw mErr;
+        if (!meeting || !meeting.transcript) {
+            return res.status(404).json({ error: 'Meeting or transcript not found' });
+        }
+
+        const transcriptData = typeof meeting.transcript === 'string'
+            ? JSON.parse(meeting.transcript)
+            : meeting.transcript;
+
+        const attendees = await resolveParticipants(transcriptData, meeting.organization_id);
+        const summary = await persistAttendees(meeting.id, attendees);
+
+        res.json({ attendees, summary });
+    } catch (error) {
+        console.error('[RESOLVE ERROR]', error);
         res.status(500).json({ error: error.message });
     }
 });

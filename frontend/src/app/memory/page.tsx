@@ -4,6 +4,9 @@ import { useEffect, useState } from 'react';
 import { createClient } from '@/utils/supabase';
 import { FileText, Upload, Search, Trash2, Database, Plus, RotateCcw, ExternalLink } from 'lucide-react';
 import { format } from 'date-fns';
+import axios from 'axios';
+
+const BACKEND_URL = 'http://localhost:3001';
 
 export default function InstitutionalMemory() {
     const [documents, setDocuments] = useState<any[]>([]);
@@ -47,7 +50,7 @@ export default function InstitutionalMemory() {
         setUploading(true);
         setIngestStatus("Vaulting Physical PDF...");
         try {
-            // 1. UPLOAD TO STORAGE
+            // 1. UPLOAD TO STORAGE (for file archival)
             const filePath = `${organization.id}/${Date.now()}_${file.name}`;
             const { error: uploadError } = await supabase.storage
                 .from('boardroom-vault')
@@ -55,38 +58,16 @@ export default function InstitutionalMemory() {
 
             if (uploadError) throw uploadError;
 
-            // 2. INSERT DB LEDGER
-            const { data: doc, error: insertError } = await supabase
-                .from('documents')
-                .insert({
-                    filename: file.name,
-                    file_type: file.type,
-                    organization_id: organization.id,
-                    file_path: filePath,
-                    status: 'uploading'
-                })
-                .select()
-                .single();
-
-            if (insertError) throw insertError;
-
-            // 3. AUTONOMOUS INGESTION (Permanent Text Chunks)
+            // 2. SEND TO BACKEND FOR PDF PARSING & RAG INDEXING
             setIngestStatus("Reading Institutional Memory...");
             const formData = new FormData();
             formData.append('file', file);
             formData.append('organization_id', organization.id);
-            formData.append('document_id', doc.id);
 
-            const response = await fetch('/api/documents/ingest', {
-                method: 'POST',
-                body: formData
-            });
+            const ingestRes = await axios.post(`${BACKEND_URL}/api/documents/upload`, formData);
 
-            const ingestResult = await response.json();
-            if (!response.ok) throw new Error(ingestResult.error);
-
-            // 4. FINAL REFRESH
-            setIngestStatus(`Success: Vaulted ${ingestResult.chunks_vaulted} Brain Chunks.`);
+            // 3. FINAL REFRESH
+            setIngestStatus(`Success: Document indexed.`);
             await loadData();
             setTimeout(() => setIngestStatus(null), 3000);
         } catch (err: any) {
@@ -97,17 +78,21 @@ export default function InstitutionalMemory() {
         }
     };
 
-    const handleDelete = async (docId: string, filePath: string) => {
+    const handleDelete = async (docId: string, filePath: string | null) => {
         if (!confirm("Are you sure you want to shred this executive document? This action is permanent.")) return;
         try {
             if (filePath) await supabase.storage.from('boardroom-vault').remove([filePath]);
-            const { error } = await supabase.from('documents').delete().eq('id', docId);
-            if (error) throw error;
+            // Delete via backend to ensure chunks are also removed
+            await axios.delete(`${BACKEND_URL}/api/documents/${docId}`);
             await loadData();
         } catch (err: any) { alert(`Shredder Error: ${err.message}`); }
     };
 
     const handleOpen = async (filePath: string) => {
+        if (!filePath) {
+            alert('No archive file linked. Document was indexed via backend upload.');
+            return;
+        }
         const { data } = await supabase.storage.from('boardroom-vault').createSignedUrl(filePath, 3600);
         if (data?.signedUrl) window.open(data.signedUrl, '_blank');
     };

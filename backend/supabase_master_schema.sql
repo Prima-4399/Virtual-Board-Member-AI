@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS profiles (
     username TEXT UNIQUE,
     organization_id UUID REFERENCES organizations(id) ON DELETE SET NULL,
     role TEXT DEFAULT 'member' CHECK (role IN ('owner', 'admin', 'member', 'viewer')),
+    board_role TEXT DEFAULT 'director' CHECK (board_role IN ('board_chair', 'director', 'company_secretary', 'legal_compliance', 'ceo_exec')),
+    display_name TEXT,
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -31,7 +33,21 @@ CREATE TABLE IF NOT EXISTS meetings (
     recording_url TEXT,
     recall_bot_id TEXT UNIQUE,
     organization_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+    attendees_summary JSONB,
     created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- 4b. Meeting Attendees (Participant ↔ Profile Junction)
+CREATE TABLE IF NOT EXISTS meeting_attendees (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    meeting_id UUID NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+    profile_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
+    participant_name TEXT NOT NULL,
+    board_role TEXT,
+    matched BOOLEAN DEFAULT false,
+    speaking_segments INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(meeting_id, participant_name)
 );
 
 -- 5. Documents Table (Executive Vault)
@@ -52,7 +68,7 @@ CREATE TABLE IF NOT EXISTS document_chunks (
     document_id UUID REFERENCES documents(id) ON DELETE CASCADE,
     content TEXT NOT NULL,
     metadata JSONB,
-    embedding VECTOR(1536),
+    embedding VECTOR(384),
     organization_id UUID REFERENCES organizations(id) ON DELETE CASCADE
 );
 
@@ -89,6 +105,7 @@ ALTER TABLE organizations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE meetings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE document_chunks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE meeting_attendees ENABLE ROW LEVEL SECURITY;
 
 -- 10. RLS POLICIES (Idempotent: Drop and Re-create)
 -- Break recursion by using the SECURITY DEFINER function
@@ -104,8 +121,13 @@ CREATE POLICY "Profiles_Insert_Policy" ON profiles FOR INSERT WITH CHECK (auth.u
 
 -- Organizations: Multi-tenant Discovery
 DROP POLICY IF EXISTS "Organizations_Select_Policy" ON organizations;
-CREATE POLICY "Organizations_Select_Policy" ON organizations FOR SELECT 
+CREATE POLICY "Organizations_Select_Policy" ON organizations FOR SELECT
 USING (auth.role() = 'authenticated');
+
+-- Allow anon users to look up organizations by join code (needed during signup)
+DROP POLICY IF EXISTS "Organizations_JoinCode_Lookup" ON organizations;
+CREATE POLICY "Organizations_JoinCode_Lookup" ON organizations FOR SELECT
+USING (true);
 
 DROP POLICY IF EXISTS "Organizations_Insert_Policy" ON organizations;
 CREATE POLICY "Organizations_Insert_Policy" ON organizations FOR INSERT WITH CHECK (owner_id = auth.uid());
@@ -120,12 +142,17 @@ CREATE POLICY "Documents_Vault_Policy" ON documents FOR ALL
 USING (organization_id = get_my_org_id());
 
 DROP POLICY IF EXISTS "Chunks_IQ_Policy" ON document_chunks;
-CREATE POLICY "Chunks_IQ_Policy" ON document_chunks FOR ALL 
+CREATE POLICY "Chunks_IQ_Policy" ON document_chunks FOR ALL
 USING (organization_id = get_my_org_id());
+
+-- Meeting Attendees: scoped via meeting's organization
+DROP POLICY IF EXISTS "Attendees_Org_Policy" ON meeting_attendees;
+CREATE POLICY "Attendees_Org_Policy" ON meeting_attendees FOR ALL
+USING (meeting_id IN (SELECT id FROM meetings WHERE organization_id = get_my_org_id()));
 
 -- 11. VECTOR SEARCH FUNCTION (For the Chatbot)
 CREATE OR REPLACE FUNCTION match_boardroom_knowledge (
-  query_embedding VECTOR(1536),
+  query_embedding VECTOR(384),
   match_threshold FLOAT,
   match_count INT,
   p_organization_id UUID
@@ -156,8 +183,8 @@ END;
 $$;
 
 -- AUTHORIZE THE ADVISOR ENGINE
-GRANT EXECUTE ON FUNCTION match_boardroom_knowledge(VECTOR(1536), FLOAT, INT, UUID) TO authenticated;
-GRANT EXECUTE ON FUNCTION match_boardroom_knowledge(VECTOR(1536), FLOAT, INT, UUID) TO anon;
+GRANT EXECUTE ON FUNCTION match_boardroom_knowledge(VECTOR(384), FLOAT, INT, UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION match_boardroom_knowledge(VECTOR(384), FLOAT, INT, UUID) TO anon;
 
 -- 12. STORAGE VAULT AUTHORIZATION (For PDFs/Docs)
 -- Create bucket if not exists

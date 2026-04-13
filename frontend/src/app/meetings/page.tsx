@@ -2,7 +2,15 @@
 
 import { useEffect, useState } from 'react';
 import { createClient } from '@/utils/supabase';
-import { Video, FileText, Calendar, Clock, ChevronRight, LayoutDashboard, Search, Trash2, ShieldAlert } from 'lucide-react';
+import { Video, FileText, Calendar, Clock, ChevronRight, LayoutDashboard, Search, Trash2, ShieldAlert, Users } from 'lucide-react';
+
+const BOARD_ROLE_COLORS: Record<string, string> = {
+    'Board Chair': 'bg-amber-500/20 text-amber-400',
+    'Director': 'bg-primary/20 text-primary',
+    'Company Secretary': 'bg-blue-500/20 text-blue-400',
+    'Legal & Compliance': 'bg-purple-500/20 text-purple-400',
+    'CEO/Executive': 'bg-emerald-500/20 text-emerald-400'
+};
 import { format } from 'date-fns';
 
 export default function MeetingHistory() {
@@ -11,6 +19,7 @@ export default function MeetingHistory() {
     const [searchTerm, setSearchTerm] = useState('');
     const [organization, setOrganization] = useState<any>(null);
     const [selectedTranscript, setSelectedTranscript] = useState<any[] | null>(null);
+    const [selectedMeetingAttendees, setSelectedMeetingAttendees] = useState<Record<string, string>>({});
 
     const supabase = createClient();
 
@@ -29,10 +38,10 @@ export default function MeetingHistory() {
         if (profile?.organization_id) {
             setOrganization(profile.organizations);
 
-            // 2. Load History
+            // 2. Load History (including attendees summary)
             const { data: meetHistory } = await supabase
                 .from('meetings')
-                .select('*')
+                .select('id, title, transcript, minutes, actions, recording_url, recall_bot_id, organization_id, attendees_summary, created_at')
                 .eq('organization_id', profile.organization_id)
                 .order('created_at', { ascending: false });
 
@@ -55,10 +64,19 @@ export default function MeetingHistory() {
             return;
         }
         try {
-            const data = typeof meeting.transcript === 'string' 
-                ? JSON.parse(meeting.transcript) 
+            const data = typeof meeting.transcript === 'string'
+                ? JSON.parse(meeting.transcript)
                 : meeting.transcript;
             setSelectedTranscript(data);
+
+            // Build attendees role map
+            const roleMap: Record<string, string> = {};
+            if (meeting.attendees_summary) {
+                for (const a of meeting.attendees_summary) {
+                    if (a.board_role) roleMap[a.name] = a.board_role;
+                }
+            }
+            setSelectedMeetingAttendees(roleMap);
         } catch (e) {
             console.error("Failed to parse transcript", e);
             alert("Transcript data is corrupted.");
@@ -118,19 +136,29 @@ export default function MeetingHistory() {
                             </button>
                         </div>
                         <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar bg-white/[0.01]">
-                            {selectedTranscript.map((entry: any, i: number) => (
+                            {selectedTranscript.map((entry: any, i: number) => {
+                                const speakerName = entry.participant?.name || 'Unknown Participant';
+                                const speakerRole = selectedMeetingAttendees[speakerName];
+                                const roleColor = speakerRole ? (BOARD_ROLE_COLORS[speakerRole] || 'bg-white/5 text-foreground/40') : '';
+                                return (
                                 <div key={i} className="space-y-2 border-l-2 border-primary/20 pl-6 py-2">
                                     <div className="flex items-center gap-3">
                                         <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-[8px] font-black text-primary">
-                                            {entry.participant?.name?.charAt(0) || 'P'}
+                                            {speakerName.charAt(0)}
                                         </div>
-                                        <p className="text-[10px] font-black text-primary uppercase tracking-widest">{entry.participant?.name || 'Unknown Participant'}</p>
+                                        <p className="text-[10px] font-black text-primary uppercase tracking-widest">{speakerName}</p>
+                                        {speakerRole && (
+                                            <span className={`text-[8px] uppercase font-black tracking-widest px-2 py-0.5 rounded-full ${roleColor}`}>
+                                                {speakerRole}
+                                            </span>
+                                        )}
                                     </div>
                                     <p className="text-foreground/70 leading-relaxed font-medium italic">
                                         {entry.words?.map((w: any) => w.text).join(' ')}
                                     </p>
                                 </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     </div>
                 </div>
@@ -170,6 +198,21 @@ export default function MeetingHistory() {
                                             <span>{format(new Date(meeting.created_at), 'HH:mm')}</span>
                                         </div>
                                     </div>
+                                    {/* Attendees */}
+                                    {meeting.attendees_summary && meeting.attendees_summary.length > 0 && (
+                                        <div className="flex items-center gap-2 mt-2 flex-wrap">
+                                            <Users className="w-3 h-3 text-foreground/20" />
+                                            {meeting.attendees_summary.map((a: any, idx: number) => (
+                                                <span
+                                                    key={idx}
+                                                    className={`text-[8px] uppercase font-black tracking-widest px-2 py-0.5 rounded-full ${a.board_role ? (BOARD_ROLE_COLORS[a.board_role] || 'bg-white/5 text-foreground/40') : 'bg-white/5 text-foreground/30'}`}
+                                                    title={a.board_role || 'Guest'}
+                                                >
+                                                    {a.name}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 

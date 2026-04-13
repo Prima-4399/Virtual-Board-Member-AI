@@ -20,7 +20,7 @@ export async function POST(req: Request) {
         // 1. DYNAMIC LEGACY SHREDDER
         // Using require inside the function to ensure ESM/CJS compatibility
         const pdf = require('pdf-parse');
-        
+
         // 2. EXTRACT TEXT
         const bytes = await file.arrayBuffer();
         const buffer = Buffer.from(bytes);
@@ -61,7 +61,7 @@ export async function POST(req: Request) {
             document_id: docId,
             content: chunk,
             organization_id: orgId,
-            embedding: Array(1536).fill(0),
+            embedding: Array(384).fill(0),
             metadata: { 
                 source: file.name,
                 pages: data.numpages,

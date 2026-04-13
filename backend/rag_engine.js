@@ -240,12 +240,30 @@ RESPONSE STRUCTURE:
     }
 }
 
-async function generateMinutes(transcript) {
-    const systemPrompt = `You are a professional board secretary. 
+const BOARD_ROLE_LABELS = {
+    board_chair: 'Board Chair',
+    director: 'Director',
+    company_secretary: 'Company Secretary',
+    legal_compliance: 'Legal & Compliance',
+    ceo_exec: 'CEO/Executive'
+};
+
+function formatRole(role) {
+    return BOARD_ROLE_LABELS[role] || role;
+}
+
+async function generateMinutes(transcript, attendees = []) {
+    const roleContext = attendees.length > 0
+        ? `\nMEETING PARTICIPANTS:\n${attendees.map(a =>
+            `- ${a.participant_name}: ${a.board_role ? formatRole(a.board_role) : 'External Guest'}${a.matched ? '' : ' (unverified)'}`
+          ).join('\n')}\n\nIMPORTANT: When referencing speakers, include their board role in parentheses, e.g., "Jane Smith (Board Chair) proposed..."\n`
+        : '';
+
+    const systemPrompt = `You are a professional board secretary.
     Transform the meeting transcript into structured minutes.
     Use HTML tags ONLY. No markdown symbols like asterisks or hashes.
-    SECTIONS: Agenda Overview, Executive Discussion, Key Decisions.
-    FORMAT: <h3>Header</h3><ul><li>Point</li></ul><strong>Decision</strong>`;
+    SECTIONS: ${attendees.length > 0 ? 'Attendance & Roles, ' : ''}Agenda Overview, Executive Discussion, Key Decisions.
+    FORMAT: <h3>Header</h3><ul><li>Point</li></ul><strong>Decision</strong>${roleContext}`;
 
     try {
         console.log('[MINUTES] Attempting Claude synthesis...');
@@ -290,13 +308,20 @@ async function generateMinutes(transcript) {
     }
 }
 
-async function extractActions(transcript) {
+async function extractActions(transcript, attendees = []) {
+    const roleContext = attendees.length > 0
+        ? `\nKNOWN PARTICIPANTS AND ROLES:\n${attendees.map(a =>
+            `- ${a.participant_name}: ${a.board_role ? formatRole(a.board_role) : 'Guest'}`
+          ).join('\n')}\n\nWhen assigning "owner", use the format "Name (Role)". Prefer assigning to matched board members.\n`
+        : '';
+
     const systemPrompt = `Analyze the meeting transcript and extract concrete action items.
-    Return ONLY a JSON array of objects with these keys: 
+    Return ONLY a JSON array of objects with these keys:
     - "task": specific description
-    - "owner": person responsible
+    - "owner": person responsible (include their board role if known)
+    - "owner_role": their board role key (board_chair, director, company_secretary, legal_compliance, ceo_exec, or guest)
     - "deadline": timeframe or date mentioned (or "N/A")
-    Format: [{"task": "...", "owner": "...", "deadline": "..."}]
+    ${roleContext}Format: [{"task": "...", "owner": "...", "owner_role": "...", "deadline": "..."}]
     If no tasks, return []. No markdown markers or preamble.`;
 
     try {
@@ -343,5 +368,7 @@ module.exports = {
     searchMemory,
     queryIntelligence,
     generateMinutes,
-    extractActions
+    extractActions,
+    formatRole,
+    BOARD_ROLE_LABELS
 };

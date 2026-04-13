@@ -2,8 +2,27 @@
 
 import { useEffect, useState } from 'react';
 import { createClient } from '@/utils/supabase';
-import { Shield, Users, Copy, CheckCircle2, RotateCcw, UserCircle, Briefcase, LayoutDashboard, Settings, ShieldAlert } from 'lucide-react';
+import { Shield, Users, Copy, CheckCircle2, RotateCcw, UserCircle, Briefcase, LayoutDashboard, Settings, ShieldAlert, ChevronDown, Pencil, Check, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import axios from 'axios';
+
+const BACKEND_URL = 'http://localhost:3001';
+
+const BOARD_ROLES: Record<string, string> = {
+    board_chair: 'Board Chair',
+    director: 'Director',
+    company_secretary: 'Company Secretary',
+    legal_compliance: 'Legal & Compliance',
+    ceo_exec: 'CEO/Executive'
+};
+
+const BOARD_ROLE_COLORS: Record<string, string> = {
+    board_chair: 'bg-amber-500/20 text-amber-400',
+    director: 'bg-primary/20 text-primary',
+    company_secretary: 'bg-blue-500/20 text-blue-400',
+    legal_compliance: 'bg-purple-500/20 text-purple-400',
+    ceo_exec: 'bg-emerald-500/20 text-emerald-400'
+};
 
 export default function OrganizationSuite() {
     const [userProfile, setUserProfile] = useState<any>(null);
@@ -15,6 +34,9 @@ export default function OrganizationSuite() {
     const [newJoinCode, setNewJoinCode] = useState('');
     const [newOrgName, setNewOrgName] = useState('');
     const [error, setError] = useState<string | null>(null);
+    const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
+    const [editingDisplayName, setEditingDisplayName] = useState<string | null>(null);
+    const [displayNameInput, setDisplayNameInput] = useState('');
 
     const supabase = createClient();
     const router = useRouter();
@@ -162,6 +184,28 @@ export default function OrganizationSuite() {
         }
     };
 
+    const handleBoardRoleChange = async (memberId: string, newRole: string) => {
+        try {
+            await axios.patch(`${BACKEND_URL}/api/profiles/${memberId}/board-role`, { board_role: newRole });
+            setMembers(prev => prev.map(m => m.id === memberId ? { ...m, board_role: newRole } : m));
+            setEditingMemberId(null);
+        } catch (err: any) {
+            console.error('Failed to update board role:', err);
+        }
+    };
+
+    const handleDisplayNameSave = async (memberId: string) => {
+        try {
+            await axios.patch(`${BACKEND_URL}/api/profiles/${memberId}/board-role`, { display_name: displayNameInput || null });
+            setMembers(prev => prev.map(m => m.id === memberId ? { ...m, display_name: displayNameInput || null } : m));
+            setEditingDisplayName(null);
+        } catch (err: any) {
+            console.error('Failed to update display name:', err);
+        }
+    };
+
+    const canEditRoles = userProfile?.role === 'owner' || userProfile?.role === 'admin';
+
     if (loading && !userProfile) return (
         <div className="flex items-center justify-center min-h-[60vh]">
             <div className="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
@@ -301,25 +345,96 @@ export default function OrganizationSuite() {
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {members.map((member) => (
-                            <div key={member.id} className="p-6 rounded-[32px] border border-white/5 bg-white/[0.01] hover:bg-white/[0.03] transition-all group flex items-start gap-4">
-                                <div className="w-12 h-12 rounded-[20px] bg-primary/5 flex items-center justify-center text-primary/40 group-hover:text-primary transition-colors">
-                                    <UserCircle className="w-8 h-8" />
-                                </div>
-                                <div className="space-y-1 flex-1">
-                                    <div className="flex items-center justify-between">
-                                        <h3 className="font-bold text-foreground/80">{member.username || member.email}</h3>
-                                        <span className={`text-[9px] uppercase font-black tracking-widest px-2 py-0.5 rounded-full ${member.role === 'owner' ? 'bg-primary/20 text-primary' : 'bg-white/5 text-foreground/40'}`}>
-                                            {member.role === 'owner' ? 'Chairman' : 'Board Member'}
-                                        </span>
+                        {members.map((member) => {
+                            const boardRole = member.board_role || 'director';
+                            const roleLabel = BOARD_ROLES[boardRole] || boardRole;
+                            const roleColor = BOARD_ROLE_COLORS[boardRole] || 'bg-white/5 text-foreground/40';
+                            const isEditingRole = editingMemberId === member.id;
+                            const isEditingName = editingDisplayName === member.id;
+                            const isOwnCard = member.id === (userProfile?.id || "");
+
+                            return (
+                                <div key={member.id} className="p-6 rounded-[32px] border border-white/5 bg-white/[0.01] hover:bg-white/[0.03] transition-all group flex items-start gap-4">
+                                    <div className="w-12 h-12 rounded-[20px] bg-primary/5 flex items-center justify-center text-primary/40 group-hover:text-primary transition-colors">
+                                        <UserCircle className="w-8 h-8" />
                                     </div>
-                                    <p className="text-[10px] text-foreground/20 font-medium italic">{member.email}</p>
-                                    {member.id === (userProfile?.id || "") && (
-                                        <div className="mt-2 text-[9px] italic text-primary font-black uppercase tracking-widest">Your Executive Identity</div>
-                                    )}
+                                    <div className="space-y-2 flex-1">
+                                        <div className="flex items-center justify-between">
+                                            <h3 className="font-bold text-foreground/80">{member.username || member.email}</h3>
+                                            <span className={`text-[8px] uppercase font-black tracking-widest px-2 py-0.5 rounded-full ${member.role === 'owner' ? 'bg-white/10 text-foreground/30' : 'bg-white/5 text-foreground/20'}`}>
+                                                {member.role}
+                                            </span>
+                                        </div>
+
+                                        {/* Board Role Badge */}
+                                        <div className="flex items-center gap-2">
+                                            {isEditingRole ? (
+                                                <select
+                                                    value={boardRole}
+                                                    onChange={(e) => handleBoardRoleChange(member.id, e.target.value)}
+                                                    onBlur={() => setEditingMemberId(null)}
+                                                    autoFocus
+                                                    className="text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-foreground outline-none cursor-pointer"
+                                                >
+                                                    {Object.entries(BOARD_ROLES).map(([key, label]) => (
+                                                        <option key={key} value={key} className="bg-background text-foreground">{label}</option>
+                                                    ))}
+                                                </select>
+                                            ) : (
+                                                <span
+                                                    className={`text-[10px] uppercase font-black tracking-widest px-3 py-1 rounded-full ${roleColor} ${canEditRoles ? 'cursor-pointer hover:ring-1 hover:ring-white/20' : ''} transition-all flex items-center gap-1.5`}
+                                                    onClick={() => canEditRoles && setEditingMemberId(member.id)}
+                                                >
+                                                    {roleLabel}
+                                                    {canEditRoles && <ChevronDown className="w-2.5 h-2.5" />}
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        {/* Display Name (Meeting Identity) */}
+                                        <div className="flex items-center gap-2">
+                                            {isEditingName ? (
+                                                <div className="flex items-center gap-1.5 w-full">
+                                                    <input
+                                                        type="text"
+                                                        value={displayNameInput}
+                                                        onChange={(e) => setDisplayNameInput(e.target.value)}
+                                                        placeholder="e.g. Jane Smith"
+                                                        autoFocus
+                                                        className="flex-1 text-[11px] px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-foreground outline-none focus:border-primary"
+                                                    />
+                                                    <button onClick={() => handleDisplayNameSave(member.id)} className="p-1 rounded-lg bg-primary/20 text-primary hover:bg-primary/30 transition-all">
+                                                        <Check className="w-3 h-3" />
+                                                    </button>
+                                                    <button onClick={() => setEditingDisplayName(null)} className="p-1 rounded-lg bg-white/5 text-foreground/40 hover:text-foreground transition-all">
+                                                        <X className="w-3 h-3" />
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="text-[10px] text-foreground/30 italic">
+                                                        {member.display_name ? `Meeting ID: ${member.display_name}` : 'No meeting display name set'}
+                                                    </span>
+                                                    {(canEditRoles || isOwnCard) && (
+                                                        <button
+                                                            onClick={() => { setEditingDisplayName(member.id); setDisplayNameInput(member.display_name || ''); }}
+                                                            className="p-0.5 rounded text-foreground/20 hover:text-primary transition-all"
+                                                        >
+                                                            <Pencil className="w-2.5 h-2.5" />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <p className="text-[10px] text-foreground/20 font-medium italic">{member.email}</p>
+                                        {isOwnCard && (
+                                            <div className="text-[9px] italic text-primary font-black uppercase tracking-widest">Your Executive Identity</div>
+                                        )}
+                                    </div>
                                 </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
             </div>

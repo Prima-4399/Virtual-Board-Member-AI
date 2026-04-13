@@ -33,11 +33,30 @@ export default function BotControl() {
     const [isGenerating, setIsGenerating] = useState(false)
     const [isExtractingActions, setIsExtractingActions] = useState(false)
     const [activeTab, setActiveTab] = useState<'transcript' | 'minutes' | 'actions'>('transcript')
+    const [attendeesMap, setAttendeesMap] = useState<Record<string, { role: string; roleKey: string; matched: boolean }>>({})
 
     const supabase = createClient()
 
+    const BOARD_ROLE_COLORS: Record<string, string> = {
+        board_chair: 'bg-amber-500/20 text-amber-400',
+        director: 'bg-primary/20 text-primary',
+        company_secretary: 'bg-blue-500/20 text-blue-400',
+        legal_compliance: 'bg-purple-500/20 text-purple-400',
+        ceo_exec: 'bg-emerald-500/20 text-emerald-400'
+    }
+
+    // Persist bot session to localStorage so it survives navigation
+    const saveSession = (id: string, status: string) => {
+        localStorage.setItem('vbma_bot_session', JSON.stringify({ botId: id, status, timestamp: Date.now() }))
+    }
+
+    const clearSession = () => {
+        localStorage.removeItem('vbma_bot_session')
+    }
+
     useEffect(() => {
-        const getOrg = async () => {
+        const init = async () => {
+            // 1. Load org
             const { data: { session } } = await supabase.auth.getSession()
             if (session) {
                 const { data: profile } = await supabase
@@ -47,8 +66,57 @@ export default function BotControl() {
                     .single()
                 if (profile?.organization_id) setOrgId(profile.organization_id)
             }
+
+            // 2. Restore bot session from localStorage
+            try {
+                const saved = localStorage.getItem('vbma_bot_session')
+                if (saved) {
+                    const { botId: savedBotId, status: savedStatus, timestamp } = JSON.parse(saved)
+                    // Only restore if session is less than 4 hours old
+                    if (savedBotId && Date.now() - timestamp < 4 * 60 * 60 * 1000) {
+                        // Verify bot is still valid by checking its status
+                        const res = await axios.get(`${BACKEND_URL}/api/bot/${savedBotId}`)
+                        const currentStatus = res.data.status
+                        setBotId(savedBotId)
+                        setBotStatus(currentStatus)
+
+                        // If bot is done, also try to load existing transcript/minutes/actions
+                        if (currentStatus === 'done' || currentStatus === 'recording' || currentStatus === 'in_call_not_recording') {
+                            try {
+                                const transRes = await axios.get(`${BACKEND_URL}/api/bot/${savedBotId}/transcript`)
+                                if (transRes.data && Array.isArray(transRes.data) && transRes.data.length > 0) {
+                                    setTranscript(transRes.data)
+                                }
+                            } catch (e) { /* no transcript yet */ }
+
+                            // Load minutes and actions from DB
+                            const { data: meeting } = await supabase.from('meetings').select('minutes, actions, attendees_summary').eq('recall_bot_id', savedBotId).maybeSingle()
+                            if (meeting?.minutes) setMinutes(meeting.minutes)
+                            if (meeting?.actions) setActions(meeting.actions)
+                            if (meeting?.attendees_summary) {
+                                const map: Record<string, { role: string; roleKey: string; matched: boolean }> = {}
+                                for (const a of meeting.attendees_summary) {
+                                    if (a.board_role) map[a.name] = { role: a.board_role, roleKey: a.board_role_key || '', matched: a.matched }
+                                }
+                                setAttendeesMap(map)
+                            }
+                        }
+
+                        // If done or fatal, clear persisted session
+                        if (currentStatus === 'done' || currentStatus === 'fatal') {
+                            clearSession()
+                        } else {
+                            saveSession(savedBotId, currentStatus)
+                        }
+                    } else {
+                        clearSession()
+                    }
+                }
+            } catch (e) {
+                clearSession()
+            }
         }
-        getOrg()
+        init()
     }, [supabase])
 
     const startBot = async () => {
@@ -72,6 +140,7 @@ export default function BotControl() {
             })
             setBotId(response.data.id)
             setBotStatus('starting')
+            saveSession(response.data.id, 'starting')
         } catch (err: any) {
             setError(err.response?.data?.error || 'Failed to start bot')
         } finally {
@@ -138,6 +207,7 @@ export default function BotControl() {
                     const newStatus = statusRes.data.status
                     console.log(`[STATUS SYNC] Bot: ${botId} is currently: ${newStatus}`)
                     setBotStatus(newStatus)
+                    saveSession(botId, newStatus)
 
                     // Fetch transcript even during recording for live feel
                     if (newStatus !== 'fatal' && newStatus !== 'starting') {
@@ -145,9 +215,24 @@ export default function BotControl() {
                         if (transRes.data && Array.isArray(transRes.data) && transRes.data.length > 0) {
                             setTranscript(transRes.data)
                         }
+
+                        // Fetch attendees summary for role badges
+                        try {
+                            const { data: meeting } = await supabase.from('meetings').select('attendees_summary').eq('recall_bot_id', botId).maybeSingle()
+                            if (meeting?.attendees_summary) {
+                                const map: Record<string, { role: string; roleKey: string; matched: boolean }> = {}
+                                for (const a of meeting.attendees_summary) {
+                                    if (a.board_role) {
+                                        map[a.name] = { role: a.board_role, roleKey: a.board_role_key || '', matched: a.matched }
+                                    }
+                                }
+                                setAttendeesMap(map)
+                            }
+                        } catch (e) { /* non-critical */ }
                     }
 
                     if (newStatus === 'done' || newStatus === 'fatal') {
+                        clearSession()
                         // One last fetch to ensure final segments
                         setTimeout(async () => {
                             const finalRes = await axios.get(`${BACKEND_URL}/api/bot/${botId}/transcript`)
@@ -158,7 +243,7 @@ export default function BotControl() {
                             generateAIMinutes()
                             extractActionItems()
                         }, 2000)
-                        
+
                         clearInterval(interval)
                         console.log(`[POLLING] Sync complete for bot: ${botId}`)
                     }
@@ -258,6 +343,10 @@ export default function BotControl() {
                                                     setBotId(null)
                                                     setBotStatus(null)
                                                     setTranscript(null)
+                                                    setMinutes('')
+                                                    setActions([])
+                                                    setAttendeesMap({})
+                                                    clearSession()
                                                 }}
                                                 className="text-[10px] uppercase font-black tracking-widest px-3 py-1.5 bg-surface-high text-muted rounded hover:text-foreground transition-all active:scale-95"
                                             >
@@ -326,7 +415,10 @@ export default function BotControl() {
 
                     <div className="flex-1 space-y-6 overflow-y-auto pr-4 custom-scrollbar">
                         {activeTab === 'transcript' ? (
-                            transcript.map((entry: any, i: number) => (
+                            transcript.map((entry: any, i: number) => {
+                                const speakerInfo = attendeesMap[entry.participant.name]
+                                const roleColor = speakerInfo?.roleKey ? (BOARD_ROLE_COLORS[speakerInfo.roleKey] || 'bg-white/5 text-foreground/40') : ''
+                                return (
                                 <div key={i} className="group p-6 bg-background rounded-2xl border border-muted/5 hover:border-primary/20 transition-all">
                                     <div className="flex items-center justify-between mb-4">
                                         <div className="flex items-center gap-3">
@@ -334,13 +426,19 @@ export default function BotControl() {
                                                 {entry.participant.name.charAt(0)}
                                             </div>
                                             <p className="font-extrabold text-sm text-primary uppercase tracking-widest">{entry.participant.name}</p>
+                                            {speakerInfo?.role && (
+                                                <span className={`text-[8px] uppercase font-black tracking-widest px-2 py-0.5 rounded-full ${roleColor}`}>
+                                                    {speakerInfo.role}
+                                                </span>
+                                            )}
                                         </div>
                                     </div>
                                     <p className="text-foreground/80 leading-relaxed text-md font-medium">
                                         {entry.words.map((w: any) => w.text).join(' ')}
                                     </p>
                                 </div>
-                            ))
+                                )
+                            })
                         ) : activeTab === 'minutes' ? (
                             <div className="h-full flex flex-col gap-6">
                                 <div className="flex items-center justify-between">
@@ -425,6 +523,11 @@ export default function BotControl() {
                                                                 <User className="w-2.5 h-2.5" />
                                                                 {action.owner || 'Unassigned'}
                                                             </div>
+                                                            {action.owner_role && action.owner_role !== 'guest' && (
+                                                                <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest ${BOARD_ROLE_COLORS[action.owner_role] || 'bg-white/5 text-foreground/40'}`}>
+                                                                    {action.owner_role.replace(/_/g, ' ')}
+                                                                </div>
+                                                            )}
                                                             {action.deadline && action.deadline !== 'N/A' && (
                                                                 <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-secondary/5 border border-secondary/10 text-[9px] font-black uppercase tracking-widest text-secondary">
                                                                     <Clock className="w-2.5 h-2.5" />
