@@ -179,40 +179,72 @@ async function queryIntelligence(userQuery, orgId) {
 
     console.log(`[RAG] Searching memory for query: "${userQuery}" in org: ${orgId}`);
     
-    // Call Supabase RPC function for vector similarity
+    // 1. Metadata Check: See if query mentions a specific file
+    const { data: namedDocs } = await supabase
+        .from('documents')
+        .select('id, filename')
+        .eq('organization_id', orgId);
+    
+    let matchedDocId = null;
+    let explicitFileMention = "";
+    if (namedDocs) {
+        const queryLower = userQuery.toLowerCase();
+        const match = namedDocs.find(d => queryLower.includes(d.filename.toLowerCase()));
+        if (match) {
+            matchedDocId = match.id;
+            explicitFileMention = `The user is specifically asking about the document: ${match.filename}.\n`;
+        }
+    }
+
+    // 2. Semantic Search
     const embed = await getEmbedder();
     const output = await embed(userQuery, { pooling: 'mean', normalize: true });
     const queryEmbedding = Array.from(output.data);
 
     const { data: contextResults, error } = await supabase.rpc('match_boardroom_knowledge', {
         query_embedding: queryEmbedding,
-        match_threshold: 0.2, // Be more generous for board memory
+        match_threshold: 0.15,
         match_count: 5,
         p_organization_id: orgId
     });
 
-    if (error) {
-        console.error('[RAG] RAG Search Error:', error);
+    if (error) console.error('[RAG] RAG Search Error:', error);
+
+    // 3. Prioritize chunks from the named document
+    let filteredContext = contextResults || [];
+    if (matchedDocId) {
+        // Boost chunks from the matched document
+        const matchedChunks = filteredContext.filter(r => r.document_id === matchedDocId);
+        if (matchedChunks.length === 0) {
+            // Force fetch if vector search missed it
+            const { data: manualChunks } = await supabase
+                .from('document_chunks')
+                .select('content, metadata')
+                .eq('document_id', matchedDocId)
+                .limit(5);
+            filteredContext = manualChunks?.map(c => ({ ...c, similarity: 1.0 })) || [];
+        } else {
+            filteredContext = matchedChunks;
+        }
     }
 
-    const contextText = contextResults?.map(r => r.content).join('\n\n---\n\n') || "";
+    const contextText = filteredContext?.map(r => r.content).join('\n\n---\n\n') || "";
 
     const prompt = `
-You are the Virtual Board Member AI. Your goal is to provide a precision-engineered DATA SHEET based on company memory.
+You are the Virtual Board Member AI. Your goal is to provide accurate advisor reasoning based ONCE AND ONLY ON the institutional memory provided.
 
-CRITICAL FORMATTING RULES:
-1. NEVER USE ASTERISKS (*) - ANYWHERE.
-2. NEVER USE UNDERSCORES (_) - ANYWHERE.
-3. NEVER USE MARKDOWN - ONLY USE HTML.
-4. USE <mark>TOKEN</mark> for EVERY numeric value, dollar amount, or percentage.
-5. USE <u>TOKEN</u> for EVERY quarter, date, or location.
-6. FORMAT: Use a short summary sentence, then a bulleted list of facts.
-7. MAX LENGTH: 150 words.
+${explicitFileMention}
+Institutional Memory:
+${contextText || "NO RELEVANT DATA FOUND IN VAULT."}
+
+CRITICAL RULES:
+1. IF NO RELEVANT DATA IS FOUND, state: "I found the document reference, but I have no indexed data on that topic in the vault."
+2. NEVER make up facts or "guess" contents.
+3. NEVER USE ASTERISKS (*) or UNDERSCORES (_).
+4. USE <mark>TOKEN</mark> for numeric values and <u>TOKEN</u> for dates/locations.
+5. MAX LENGTH: 150 words.
 
 User Query: ${userQuery}
-
-Institutional Memory:
-${contextText || "NO HISTORICAL DATA FOUND. Answer based on general board member knowledge."}
 
 RESPONSE STRUCTURE:
 [One sentence overview]
@@ -220,6 +252,7 @@ RESPONSE STRUCTURE:
 `;
 
     try {
+        const anthropic = new Anthropic({ apiKey: key });
         const response = await anthropic.messages.create({
             model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6",
             max_tokens: 1024,
@@ -235,8 +268,41 @@ RESPONSE STRUCTURE:
             }))
         };
     } catch (apiError) {
-        console.error('[RAG] LLM Error:', apiError.message);
-        throw apiError;
+        console.warn('[RAG] Anthropic failed, attempting Groq fallback...', apiError.message);
+        
+        try {
+            if (!process.env.GROQ_API_KEY) throw new Error('GROQ_API_KEY missing');
+            
+            const groqRes = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
+                model: process.env.GROQ_MODEL || "llama-3.1-8b-instant",
+                messages: [
+                    { role: "system", content: "You are the Virtual Board Member AI. Respond in HTML correctly as requested." },
+                    { role: "user", content: prompt }
+                ],
+                max_tokens: 1024
+            }, {
+                headers: {
+                    'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            console.log('[RAG] Groq fallback succeeded.');
+            const reply = groqRes.data.choices[0].message.content;
+            
+            return {
+                answer: reply,
+                context: contextResults?.[0]?.content.slice(0, 500) + "...",
+                sources: contextResults?.map(r => ({
+                    name: r.metadata.fileName || r.metadata.title,
+                    relevance: r.similarity
+                })),
+                engine: 'groq-fallback'
+            };
+        } catch (groqErr) {
+            console.error('[RAG] Both LLMs failed:', groqErr.message);
+            throw new Error(`AI Advisory Engine Failed (Claude & Groq): ${groqErr.message}`);
+        }
     }
 }
 

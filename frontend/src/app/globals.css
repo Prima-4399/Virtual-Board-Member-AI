@@ -1,62 +1,59 @@
 @import "tailwindcss";
 
-/* --- STITCH BOARDROOM FORMATTING --- */
+/* --- INSTITUTIONAL BOARDROOM FORMATTING --- */
 mark {
-  background-color: #1a4d2e;
-  /* Forest Green */
-  color: white;
+  background-color: var(--primary);
+  color: var(--background);
   padding: 0 4px;
-  border-radius: 4px;
+  border-radius: 2px;
   font-weight: 700;
 }
 
 u {
-  text-decoration-color: #d4a373;
-  /* Warm Clay */
-  text-decoration-thickness: 2px;
+  text-decoration-color: var(--primary);
+  text-decoration-thickness: 1px;
   text-underline-offset: 4px;
 }
 
 :root {
-  /* Surface Layers (Light) */
-  --background: #fdf9f0;
-  /* Sandstone */
-  --foreground: #1c1c16;
-  /* Slate Ink */
-  --surface-low: #f7f3ea;
-  --surface-high: #ece8df;
-  --surface-highest: #e6e2d9;
+  /* Surface Layers (Light Mode - Traditional Paper) */
+  --background: #ffffff;
+  --foreground: #0a0a0a;
+  
+  --surface-low: #f9f9f9;
+  --surface-high: #f0f0f0;
+  --surface-highest: #e5e5e5;
 
-  /* Brand Colors */
-  --primary: #0f5238;
-  /* Forest Green */
-  --primary-foreground: #fdf9f0;
-  --secondary: #a53c07;
-  /* Warm Clay */
-  --secondary-foreground: #fdf9f0;
-  --accent: #344c41;
-  --muted: #707973;
-  --border: #bfc9c1;
+  /* Brand Colors (Onyx & Amber) */
+  --primary: #b8860b; /* Dark Goldenrod / Amber */
+  --primary-foreground: #ffffff;
+  
+  --secondary: #262626; /* Deep Onyx */
+  --secondary-foreground: #ffffff;
+  
+  --accent: #d4af37; /* Metallic Gold */
+  --muted: #737373;
+  --border: #e5e5e5;
 
-  --radius: 1.5rem;
-  /* 24px per Stitch Spec */
+  --radius: 0.5rem; /* Shorter, sharper institutional radius */
 }
 
 .dark {
-  --background: #1a1c1a;
-  /* Slate Dark Ink */
-  --foreground: #f1ede4;
-  --surface-low: #252725;
-  --surface-high: #2f312f;
-  --surface-highest: #383a38;
+  /* Surface Layers (Dark Mode - Midnight Archive) */
+  --background: #050505;
+  --foreground: #f5f5f5;
+  
+  --surface-low: #0f0f0f;
+  --surface-high: #171717;
+  --surface-highest: #262626;
 
-  --primary: #95d4b3;
-  /* Mint Forest */
-  --primary-foreground: #002114;
-  --secondary: #ffb59a;
-  /* Bright Clay */
-  --secondary-foreground: #370e00;
-  --border: #404943;
+  --primary: #d4af37; /* Bright Gold for legibility on dark */
+  --primary-foreground: #000000;
+  
+  --secondary: #e5e5e5;
+  --secondary-foreground: #000000;
+  
+  --border: #262626;
 }
 
 @theme inline {
@@ -64,25 +61,46 @@ u {
   --color-foreground: var(--foreground);
   --color-surface-low: var(--surface-low);
   --color-surface-high: var(--surface-high);
+  --color-surface-highest: var(--surface-highest);
   --color-primary: var(--primary);
   --color-secondary: var(--secondary);
+  --color-border: var(--border);
 }
 
 body {
   background-color: var(--background);
   color: var(--foreground);
   font-family: 'Inter', sans-serif;
-  transition: background-color 0.4s ease, color 0.4s ease;
+  transition: background-color 0.5s cubic-bezier(0.4, 0, 0.2, 1), color 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Elegant Bento Panel Utility */
-.bento-panel {
-  background-color: var(--surface-low);
-  border-radius: var(--radius);
-  padding: 32px;
-  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.2s ease;
+/* Sharp Institutional Border Utility */
+.inst-border {
+  border: 1px solid var(--border);
+  transition: border-color 0.3s ease;
 }
 
-.bento-panel:hover {
-  background-color: var(--surface-high);
+/* Removal of all Gradient Utilities in favor of sharp lines */
+.no-gradient {
+  background-image: none !important;
+}
+
+/* Custom Scrollbar for Institutional Feel */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--background);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--surface-highest);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary);
 }

@@ -36,7 +36,7 @@ export default function VirtualBoardChat() {
                     setOrganization(profile.organizations);
                     setMessages([{
                         role: 'assistant',
-                        content: `Good afternoon. I am your Virtual Board Member for ${profile.organizations.name}. I have access to your institutional memory, meeting history, and corporate library. How can I advise you today?`
+                        content: `Hi! I'm your AI assistant for ${profile.organizations.name}. I can help you search through your past meetings and saved documents. How can I help you today?`
                     }]);
                 }
             }
@@ -66,9 +66,9 @@ export default function VirtualBoardChat() {
             });
 
             const data = await response.json();
-            setMessages(prev => [...prev, { role: 'assistant', content: data.reply || "I am currently consolidating your boardroom knowledge. Please repeat your query." }]);
+            setMessages(prev => [...prev, { role: 'assistant', content: data.reply || "I'm still reading through your files. Please try again in a moment." }]);
         } catch (error) {
-            setMessages(prev => [...prev, { role: 'assistant', content: "My apologies, our institutional memory link was momentarily interrupted." }]);
+            setMessages(prev => [...prev, { role: 'assistant', content: "Sorry, I'm having trouble connecting to your files right now." }]);
         } finally {
             setLoading(false);
         }
@@ -83,32 +83,32 @@ export default function VirtualBoardChat() {
     if (!organization) return (
         <div className="max-w-2xl mx-auto py-24 px-6 text-center space-y-6">
             <Shield className="w-16 h-16 text-primary/20 mx-auto" />
-            <h2 className="text-3xl font-serif font-medium italic text-foreground/60">Executive Advisory Locked</h2>
-            <p className="text-foreground/20 text-sm">You must be part of an organization to consult the Virtual Board Member.</p>
+            <h2 className="text-3xl font-serif font-medium italic text-foreground/60">Chat Locked</h2>
+            <p className="text-foreground/20 text-sm">You must be part of a company to talk to the AI assistant.</p>
         </div>
     );
 
     return (
-        <div className="max-w-5xl mx-auto h-[calc(100vh-140px)] flex flex-col px-6">
+        <div className="max-w-5xl mx-auto h-[calc(100vh-140px)] flex flex-col px-6 bg-background">
             {/* Boardroom Context Header */}
-            <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 py-8 border-b border-white/5">
+            <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 py-8 border-b border-border">
                 <div className="flex items-center gap-6">
-                    <div className="w-16 h-16 rounded-[24px] bg-primary/5 flex items-center justify-center text-primary relative overflow-hidden group">
+                    <div className="w-16 h-16 rounded-xl bg-surface-low border border-border flex items-center justify-center text-primary relative overflow-hidden group shadow-sm">
                         <Cpu className="w-8 h-8 relative z-10" />
-                        <div className="absolute inset-0 bg-primary/10 animate-pulse" />
+                        <div className="absolute inset-x-0 bottom-0 h-1 bg-primary/20" />
                     </div>
                     <div className="space-y-1">
-                        <h1 className="text-2xl font-serif font-medium leading-none">Virtual Board Advisor</h1>
-                        <p className="text-[10px] uppercase font-black tracking-widest text-foreground/20 italic">
-                            Synchronized with {organization.name} Memory Vault
+                        <h1 className="text-2xl font-serif font-medium leading-none">AI Assistant</h1>
+                        <p className="text-[10px] uppercase font-black tracking-widest text-foreground/40 italic">
+                            Connected to {organization.name} documents
                         </p>
                     </div>
                 </div>
 
                 <div className="flex items-center gap-3">
-                    <div className="px-4 py-2 rounded-xl bg-white/[0.02] border border-white/5 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-foreground/40">
+                    <div className="px-4 py-2 rounded-lg bg-surface-low border border-border flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-foreground/40 shadow-sm">
                         <Database className="w-3 h-3" />
-                        <span>RAG Engine Online</span>
+                        <span>AI Systems Ready</span>
                     </div>
                 </div>
             </header>
@@ -120,24 +120,24 @@ export default function VirtualBoardChat() {
                         key={idx} 
                         className={`flex gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500 ${m.role === 'assistant' ? 'mr-12' : 'ml-12 flex-row-reverse text-right'}`}
                     >
-                        <div className={`w-12 h-12 rounded-2xl shrink-0 flex items-center justify-center ${m.role === 'assistant' ? 'bg-primary/5 text-primary' : 'bg-white/5 text-foreground/40'}`}>
+                        <div className={`w-12 h-12 rounded-xl border border-border shrink-0 flex items-center justify-center shadow-sm ${m.role === 'assistant' ? 'bg-surface-low text-primary' : 'bg-surface-high text-foreground/40'}`}>
                             {m.role === 'assistant' ? <Cpu className="w-6 h-6" /> : <UserCircle className="w-6 h-6" />}
                         </div>
                         <div className="space-y-4 max-w-2xl">
                             {m.role === 'assistant' ? (
                                 <div
-                                    className="text-base leading-relaxed text-foreground/80 prose prose-invert max-w-none prose-li:text-foreground/70 prose-strong:text-foreground prose-table:text-sm prose-th:text-primary prose-th:text-left prose-td:py-1 prose-td:pr-4"
+                                    className="text-base leading-relaxed text-foreground/80 prose prose-neutral dark:prose-invert max-w-none prose-li:text-foreground/70 prose-strong:text-foreground prose-table:text-sm prose-th:text-primary prose-th:text-left prose-td:py-1 prose-td:pr-4 font-medium"
                                     dangerouslySetInnerHTML={{ __html: m.content }}
                                 />
                             ) : (
-                                <div className="text-lg font-serif leading-relaxed text-foreground/60">
+                                <div className="text-lg font-serif leading-relaxed text-foreground/80 font-medium italic">
                                     {m.content}
                                 </div>
                             )}
                             {m.role === 'assistant' && idx > 0 && (
-                                <div className="flex items-center gap-4 text-[9px] uppercase font-black tracking-[0.2em] text-primary/40 italic font-bold">
+                                <div className="flex items-center gap-4 text-[9px] uppercase font-black tracking-[0.2em] text-primary/60 italic font-bold">
                                     <BookOpen className="w-3 h-3" />
-                                    <span>Verified via Institutional Vault</span>
+                                    <span>Checked with your files</span>
                                 </div>
                             )}
                         </div>
@@ -145,11 +145,11 @@ export default function VirtualBoardChat() {
                 ))}
                 {loading && (
                     <div className="flex gap-8 mr-12 animate-pulse">
-                        <div className="w-12 h-12 rounded-2xl bg-primary/5 flex items-center justify-center text-primary">
+                        <div className="w-12 h-12 rounded-xl bg-surface-low border border-border flex items-center justify-center text-primary shadow-sm">
                             <Cpu className="w-6 h-6" />
                         </div>
-                        <div className="text-lg font-serif italic text-primary/40 mt-2 font-medium">
-                            Consulting institutional memory for {organization.name}...
+                        <div className="text-lg font-serif italic text-primary/60 mt-2 font-medium">
+                            Searching your documents...
                         </div>
                     </div>
                 )}
@@ -164,23 +164,23 @@ export default function VirtualBoardChat() {
                         placeholder="Ask about strategy, meeting decisions, or documents..."
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
-                        className="w-full h-20 px-8 pr-24 rounded-[32px] bg-white/[0.02] border border-white/5 focus:border-primary focus:bg-white/[0.04] text-foreground font-serif text-xl outline-none transition-all placeholder:text-foreground/10"
+                        className="w-full h-20 px-8 pr-24 rounded-2xl bg-surface-low border border-border focus:border-primary focus:bg-surface-high text-foreground font-serif text-xl outline-none transition-all placeholder:text-foreground/20 shadow-lg shadow-black/5"
                     />
                     <button 
                         type="submit"
                         disabled={loading || !input.trim()}
-                        className="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 bg-primary hover:bg-primary/95 text-background rounded-[18px] flex items-center justify-center transition-all active:scale-90 disabled:opacity-30"
+                        className="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 bg-primary hover:bg-primary/95 text-background rounded-xl flex items-center justify-center transition-all active:scale-90 disabled:opacity-30 shadow-sm"
                     >
                         <Send className="w-5 h-5" />
                     </button>
-                    <div className="absolute -bottom-6 left-8 flex items-center gap-6 text-[9px] uppercase font-black tracking-widest text-foreground/10">
+                    <div className="absolute -bottom-7 left-3 flex items-center gap-8 text-[9px] uppercase font-black tracking-[0.2em] text-foreground/40 font-bold">
                         <div className="flex items-center gap-2">
-                            <Video className="w-3 h-3" />
-                            <span>Meeting History</span>
+                            <Video className="w-3.5 h-3.5 text-primary/60" />
+                            <span>Past Meetings</span>
                         </div>
                         <div className="flex items-center gap-2">
-                            <BookOpen className="w-3 h-3" />
-                            <span>PDF/Word Archives</span>
+                            <BookOpen className="w-3.5 h-3.5 text-primary/60" />
+                            <span>Saved Files</span>
                         </div>
                     </div>
                 </form>

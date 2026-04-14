@@ -4,7 +4,12 @@ import { useState } from 'react';
 import { createClient } from '@/utils/supabase';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ShieldCheck, ArrowRight, Loader2, UserPlus, Mail, Lock } from 'lucide-react';
+import { ShieldCheck, ArrowRight, Loader2, UserPlus, Mail, Lock, CheckCircle2 } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
+import { useEffect } from 'react';
+import axios from 'axios';
+
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
 
 export default function SignupPage() {
     const [email, setEmail] = useState('');
@@ -17,7 +22,25 @@ export default function SignupPage() {
     const [loading, setLoading] = useState(false);
 
     const router = useRouter();
+    const searchParams = useSearchParams();
     const supabase = createClient();
+
+    const inviteId = searchParams.get('inviteId');
+    const inviteEmail = searchParams.get('email');
+    const [invitationData, setInvitationData] = (useState as any)(null);
+
+    useEffect(() => {
+        if (inviteId) {
+            setEmail(inviteEmail || '');
+            setIsJoining(true); // Treat as joining for the UI
+            fetchInvitation();
+        }
+    }, [inviteId]);
+
+    const fetchInvitation = async () => {
+        const { data } = await axios.get(`${BACKEND_URL}/api/organizations/invite/${inviteId}`);
+        if (data) setInvitationData(data);
+    };
 
     const [username, setUsername] = useState('');
 
@@ -43,7 +66,16 @@ export default function SignupPage() {
             await supabase.from('profiles').update({ username }).eq('id', authData.user.id);
 
             // 2. Organization Logic
-            if (isJoining) {
+            if (inviteId && invitationData) {
+                // AUTO-JOIN via Invite
+                await supabase.from('profiles').update({
+                    organization_id: invitationData.organization_id,
+                    role: invitationData.role || 'member'
+                }).eq('id', authData.user.id);
+                
+                // Mark invite as accepted
+                await supabase.from('invitations').update({ status: 'accepted' }).eq('id', inviteId);
+            } else if (isJoining) {
                 // Link to existing org via code
                 const { data: orgData, error: orgError } = await supabase
                     .from('organizations')
@@ -98,16 +130,16 @@ export default function SignupPage() {
     if (success) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[calc(100vh-80px)] px-6 text-center space-y-8 animate-in fade-in zoom-in-95 duration-700">
-                <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center text-primary mx-auto mb-4">
+                <div className="w-20 h-20 rounded-xl bg-surface-low border border-primary/20 flex items-center justify-center text-primary mx-auto mb-4 shadow-xl shadow-primary/5">
                     <ShieldCheck className="w-10 h-10" />
                 </div>
-                <div className="max-w-md space-y-4">
-                    <h1 className="text-4xl font-serif font-medium text-foreground">Welcome to the Board</h1>
-                    <p className="text-foreground/40 text-lg font-medium leading-relaxed">
+                <div className="max-w-md space-y-6">
+                    <h1 className="text-4xl font-serif font-medium text-foreground tracking-tight">Welcome to the Board</h1>
+                    <p className="text-foreground/40 text-lg font-medium leading-relaxed font-serif italic">
                         Verification link sent to <span className="text-primary font-bold">{email}</span>. Click it to activate your seat in the suite.
                     </p>
                 </div>
-                <Link href="/login" className="flex items-center justify-center gap-2 px-8 py-3 rounded-2xl bg-white/5 border border-white/10 text-foreground/60 hover:text-foreground hover:bg-white/10 transition-all font-black text-[10px] uppercase tracking-widest tracking-tighter">
+                <Link href="/login" className="flex items-center justify-center gap-2 px-10 py-4 rounded-xl bg-primary text-background hover:bg-primary/95 transition-all font-black text-[10px] uppercase tracking-[0.2em] shadow-lg shadow-primary/20 active:scale-95">
                     <span>Finalize Entrance</span>
                 </Link>
             </div>
@@ -118,29 +150,38 @@ export default function SignupPage() {
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-80px)] px-6 relative">
             <div className="max-w-md w-full space-y-10 py-12">
                 {/* Branding */}
-                <div className="text-center space-y-4">
-                    <div className="w-16 h-16 rounded-[24px] bg-primary/10 flex items-center justify-center text-primary mx-auto mb-8 ring-8 ring-primary/5">
+                <div className="text-center space-y-6">
+                    <div className="w-16 h-16 rounded-xl bg-surface-low border border-border flex items-center justify-center text-primary mx-auto mb-8 shadow-lg shadow-primary/5">
                         <UserPlus className="w-8 h-8" />
                     </div>
-                    <h1 className="text-4xl font-serif font-medium text-foreground">Boardroom Registration</h1>
-                    <p className="text-foreground/40 text-sm font-medium italic">Secure your seat in the executive intelligence suite</p>
+                    <h1 className="text-4xl font-serif font-medium text-foreground tracking-tight">Boardroom Registration</h1>
+                    <p className="text-foreground/40 text-sm font-medium italic font-serif">Secure your seat in the executive intelligence suite</p>
                 </div>
 
-                {/* Form Mode Toggle */}
-                <div className="flex p-1 rounded-2xl bg-white/[0.02] border border-white/5">
-                    <button
-                        onClick={() => setIsJoining(true)}
-                        className={`flex-1 py-3 rounded-xl text-[10px] uppercase font-black tracking-widest transition-all ${isJoining ? 'bg-primary text-background' : 'text-foreground/40 hover:text-foreground/60'}`}
-                    >
-                        Join Organization
-                    </button>
-                    <button
-                        onClick={() => setIsJoining(false)}
-                        className={`flex-1 py-3 rounded-xl text-[10px] uppercase font-black tracking-widest transition-all ${!isJoining ? 'bg-primary text-background' : 'text-foreground/40 hover:text-foreground/60'}`}
-                    >
-                        Create Organization
-                    </button>
-                </div>
+                {/* Form Mode Toggle - hide if invited */}
+                {!inviteId && (
+                    <div className="flex p-1 rounded-xl bg-surface-low border border-border">
+                        <button
+                            onClick={() => setIsJoining(true)}
+                            className={`flex-1 py-3 rounded-lg text-[10px] uppercase font-black tracking-[0.2em] transition-all font-bold ${isJoining ? 'bg-primary text-background shadow-sm' : 'text-foreground/40 hover:text-foreground/60'}`}
+                        >
+                            Join Organization
+                        </button>
+                        <button
+                            onClick={() => setIsJoining(false)}
+                            className={`flex-1 py-3 rounded-lg text-[10px] uppercase font-black tracking-[0.2em] transition-all font-bold ${!isJoining ? 'bg-primary text-background shadow-sm' : 'text-foreground/40 hover:text-foreground/60'}`}
+                        >
+                            Create Organization
+                        </button>
+                    </div>
+                )}
+
+                {inviteId && invitationData && (
+                    <div className="p-4 rounded-2xl bg-primary/5 border border-primary/20 text-center animate-in slide-in-from-top-4">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">Invitation Found</p>
+                        <h3 className="text-lg font-serif italic text-foreground/80">Joining {invitationData.organizations?.name}</h3>
+                    </div>
+                )}
 
                 {/* Form */}
                 <div className="space-y-6">
@@ -154,35 +195,37 @@ export default function SignupPage() {
 
                         <div className="space-y-4">
                             {/* Org Field */}
-                            {isJoining ? (
-                                <div className="space-y-2 group">
-                                    <label className="text-[10px] font-black uppercase tracking-widest text-primary ml-1 group-focus-within:text-foreground transition-colors italic">6-Digit Seat Code</label>
-                                    <input
-                                        type="text"
-                                        required
-                                        placeholder="EX: ABCDEF"
-                                        value={joinCode}
-                                        maxLength={6}
-                                        onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-                                        className="w-full h-14 px-6 rounded-2xl bg-white/[0.02] border border-white/5 focus:border-primary focus:bg-white/[0.04] text-foreground font-mono text-xl tracking-[0.5em] text-center outline-none transition-all placeholder:text-foreground/10"
-                                    />
-                                </div>
-                            ) : (
-                                <div className="space-y-2 group">
-                                    <label className="text-[10px] font-black uppercase tracking-widest text-primary ml-1 group-focus-within:text-foreground transition-colors italic">Company Identity</label>
-                                    <input
-                                        type="text"
-                                        required
-                                        placeholder="EX: Cogniify"
-                                        value={organizationName}
-                                        onChange={(e) => setOrganizationName(e.target.value)}
-                                        className="w-full h-14 px-6 rounded-2xl bg-white/[0.02] border border-white/5 focus:border-primary focus:bg-white/[0.04] text-foreground outline-none transition-all"
-                                    />
-                                </div>
+                            {!inviteId && (
+                                isJoining ? (
+                                    <div className="space-y-2 group">
+                                        <label className="text-[10px] font-black uppercase tracking-widest text-primary ml-1 group-focus-within:text-foreground transition-colors italic font-bold">6-Digit Seat Code</label>
+                                        <input
+                                            type="text"
+                                            required
+                                            placeholder="EX: ABCDEF"
+                                            value={joinCode}
+                                            maxLength={6}
+                                            onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                                            className="w-full h-14 px-6 rounded-xl bg-surface-low border border-border focus:border-primary focus:bg-surface-high text-foreground font-mono text-xl tracking-[0.5em] text-center outline-none transition-all placeholder:text-foreground/10 shadow-sm"
+                                        />
+                                    </div>
+                                ) : (
+                                    <div className="space-y-2 group">
+                                        <label className="text-[10px] font-black uppercase tracking-widest text-primary ml-1 group-focus-within:text-foreground transition-colors italic font-bold">Company Identity</label>
+                                        <input
+                                            type="text"
+                                            required
+                                            placeholder="EX: Cogniify"
+                                            value={organizationName}
+                                            onChange={(e) => setOrganizationName(e.target.value)}
+                                            className="w-full h-14 px-6 rounded-xl bg-surface-low border border-border focus:border-primary focus:bg-surface-high text-foreground outline-none transition-all shadow-sm font-serif italic"
+                                        />
+                                    </div>
+                                )
                             )}
 
                             <div className="space-y-2 group">
-                                <label className="text-[10px] font-black uppercase tracking-widest text-primary ml-1 italic group-focus-within:text-foreground">Executive Username</label>
+                                <label className="text-[10px] font-black uppercase tracking-widest text-primary ml-1 italic group-focus-within:text-foreground font-bold">Executive Username</label>
                                 <div className="relative">
                                     <UserPlus className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground/40" />
                                     <input
@@ -191,13 +234,13 @@ export default function SignupPage() {
                                         placeholder="EX: manas_cogniify"
                                         value={username}
                                         onChange={(e) => setUsername(e.target.value.toLowerCase())}
-                                        className="w-full h-14 pl-12 pr-4 rounded-2xl bg-white/[0.02] border border-white/5 focus:border-primary focus:bg-white/[0.04] text-foreground outline-none transition-all placeholder:text-foreground/10"
+                                        className="w-full h-14 pl-12 pr-4 rounded-xl bg-surface-low border border-border focus:border-primary focus:bg-surface-high text-foreground outline-none transition-all placeholder:text-foreground/10 shadow-sm"
                                     />
                                 </div>
                             </div>
 
                             <div className="space-y-2 group">
-                                <label className="text-[10px] font-black uppercase tracking-widest text-primary ml-1 italic">Email Identifier</label>
+                                <label className="text-[10px] font-black uppercase tracking-widest text-primary ml-1 italic font-bold">Email Identifier</label>
                                 <div className="relative">
                                     <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground/40" />
                                     <input
@@ -206,13 +249,13 @@ export default function SignupPage() {
                                         placeholder="name@company.com"
                                         value={email}
                                         onChange={(e) => setEmail(e.target.value)}
-                                        className="w-full h-14 pl-12 pr-4 rounded-2xl bg-white/[0.02] border border-white/5 focus:border-primary focus:bg-white/[0.04] text-foreground outline-none transition-all"
+                                        className="w-full h-14 pl-12 pr-4 rounded-xl bg-surface-low border border-border focus:border-primary focus:bg-surface-high text-foreground outline-none transition-all shadow-sm"
                                     />
                                 </div>
                             </div>
 
                             <div className="space-y-2 group">
-                                <label className="text-[10px] font-black uppercase tracking-widest text-primary ml-1 italic">Secure Password</label>
+                                <label className="text-[10px] font-black uppercase tracking-widest text-primary ml-1 italic font-bold">Secure Password</label>
                                 <div className="relative">
                                     <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground/40" />
                                     <input
@@ -221,7 +264,7 @@ export default function SignupPage() {
                                         placeholder="••••••••"
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
-                                        className="w-full h-14 pl-12 pr-4 rounded-2xl bg-white/[0.02] border border-white/5 focus:border-primary focus:bg-white/[0.04] text-foreground outline-none transition-all"
+                                        className="w-full h-14 pl-12 pr-4 rounded-xl bg-surface-low border border-border focus:border-primary focus:bg-surface-high text-foreground outline-none transition-all shadow-sm"
                                     />
                                 </div>
                             </div>
@@ -242,15 +285,15 @@ export default function SignupPage() {
 
                     {/* Divider */}
                     <div className="flex items-center gap-4 py-2">
-                        <div className="h-px flex-1 bg-white/5" />
+                        <div className="h-px flex-1 bg-border" />
                         <span className="text-[10px] font-black text-foreground/20 uppercase tracking-widest">or register with</span>
-                        <div className="h-px flex-1 bg-white/5" />
+                        <div className="h-px flex-1 bg-border" />
                     </div>
 
                     {/* OAuth Area */}
                     <button
                         onClick={handleGoogleLogin}
-                        className="w-full h-14 rounded-2xl border border-white/5 bg-white/[0.02] hover:bg-white/[0.05] flex items-center justify-center gap-4 transition-all group active:scale-95"
+                        className="w-full h-14 rounded-xl border border-border bg-surface-low hover:bg-surface-high flex items-center justify-center gap-4 transition-all group active:scale-95 shadow-sm"
                     >
                         <svg className="w-5 h-5 transition-transform group-hover:scale-110" viewBox="0 0 24 24">
                             <path fill="#EA4335" d="M5.266 9.765A7.077 7.077 0 0 1 12 4.909c1.69 0 3.218.6 4.418 1.582L19.91 3C17.782 1.145 15.055 0 12 0 7.33 0 3.305 2.722 1.34 6.691l3.926 3.074z" />

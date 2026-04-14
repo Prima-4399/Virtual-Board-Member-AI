@@ -1,9 +1,21 @@
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
+const nodemailer = require('nodemailer');
 require('dotenv').config();
 
 const app = express();
+
+// -- EMAIL SETUP --
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+    }
+});
+
+
 const port = process.env.PORT || 3001;
 
 app.use(cors({
@@ -32,6 +44,7 @@ const multer = require('multer');
 const { indexDocument, queryIntelligence, indexMeetingTranscript, generateMinutes, extractActions, generateTitle } = require('./rag_engine');
 const { resolveParticipants, persistAttendees } = require('./participant_resolver');
 const { createClient } = require('@supabase/supabase-js');
+const { google } = require('googleapis');
 const { v4: uuidv4 } = require('uuid');
 
 const supabase = createClient(
@@ -40,6 +53,28 @@ const supabase = createClient(
 );
 
 const upload = multer({ dest: 'uploads/' });
+
+// -- GOOGLE CALENDAR CONFIG --
+const googleConfig = {
+    clientId: process.env.GOOGLE_CLIENT_ID,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    redirect: process.env.GOOGLE_REDIRECT_URI,
+};
+
+function createConnection() {
+    return new google.auth.OAuth2(
+        googleConfig.clientId,
+        googleConfig.clientSecret,
+        googleConfig.redirect
+    );
+}
+
+const GOOGLE_SCOPES = [
+    'https://www.googleapis.com/auth/calendar',
+    'https://www.googleapis.com/auth/calendar.events',
+    'https://www.googleapis.com/auth/userinfo.email'
+];
+
 
 // Endpoint to create a bot
 app.post('/api/bot', async (req, res) => {
@@ -74,7 +109,8 @@ app.post('/api/bot', async (req, res) => {
                 id: uuidv4(),
                 title: `Session: ${new Date().toLocaleString()}`,
                 organization_id: organization_id,
-                recall_bot_id: botId
+                recall_bot_id: botId,
+                bot_join_status: 'joined'
             }, { onConflict: 'recall_bot_id' });
             
             if (insError) {
@@ -213,8 +249,22 @@ const fs = require('fs');
 // Upload and Index Document
 app.post('/api/documents/upload', upload.single('file'), async (req, res) => {
     try {
-        const { organization_id } = req.body;
+        const { organization_id, userId } = req.body; // Expect userId to check role
         if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+        // Check if userId is provided and not intern
+        if (userId) {
+            const { data: userProfile } = await supabase
+                .from('profiles')
+                .select('role')
+                .eq('id', userId)
+                .single();
+
+            if (userProfile?.role === 'intern') {
+                if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+                return res.status(403).json({ error: 'Permission denied: Interns cannot upload documents.' });
+            }
+        }
 
         console.log(`[UPLOAD] Processing: ${req.file.originalname} for org: ${organization_id}`);
         const docId = await indexDocument(req.file.path, req.file.originalname, organization_id);
@@ -280,6 +330,32 @@ app.delete('/api/documents/:id', async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+
+// Delete Meeting
+app.delete('/api/meetings/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        // 1. Delete associated documents/transcripts from RAG (this will also delete chunks if cascade is set)
+        await supabase.from('documents').delete().eq('meeting_id', id);
+
+        // 2. Delete attendee records
+        await supabase.from('meeting_attendees').delete().eq('meeting_id', id);
+        
+        // 3. Delete the meeting record
+        const { error } = await supabase
+            .from('meetings')
+            .delete()
+            .eq('id', id);
+
+        if (error) throw error;
+        res.json({ message: 'Meeting and associated records deleted successfully' });
+    } catch (error) {
+        console.error('[DELETE meeting ERROR]', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 
 // Generate Automated Minutes
 app.post('/api/bot/:id/minutes', async (req, res) => {
@@ -408,7 +484,20 @@ const VALID_BOARD_ROLES = ['board_chair', 'director', 'company_secretary', 'lega
 app.patch('/api/profiles/:id/board-role', async (req, res) => {
     try {
         const { id } = req.params;
-        const { board_role, display_name } = req.body;
+        const { board_role, display_name, role, adminId } = req.body;
+
+        // 0. Check permissions (Only CEO can change roles)
+        if (role || board_role) {
+            const { data: admin } = await supabase
+                .from('profiles')
+                .select('role')
+                .eq('id', adminId)
+                .single();
+
+            if (!admin || admin.role !== 'ceo') {
+                return res.status(403).json({ error: 'Permission denied: Only CEOs can change member roles.' });
+            }
+        }
 
         if (board_role && !VALID_BOARD_ROLES.includes(board_role)) {
             return res.status(400).json({ error: `Invalid board_role. Must be one of: ${VALID_BOARD_ROLES.join(', ')}` });
@@ -416,6 +505,7 @@ app.patch('/api/profiles/:id/board-role', async (req, res) => {
 
         const updates = {};
         if (board_role) updates.board_role = board_role;
+        if (role) updates.role = role;
         if (display_name !== undefined) updates.display_name = display_name;
 
         const { data, error } = await supabase
@@ -429,6 +519,258 @@ app.patch('/api/profiles/:id/board-role', async (req, res) => {
         res.json(data);
     } catch (error) {
         console.error('[BOARD ROLE ERROR]', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Revoke organization membership
+app.delete('/api/organizations/:orgId/members/:memberId', async (req, res) => {
+    try {
+        const { orgId, memberId } = req.params;
+
+        // Reset organization_id and role for the user
+        const { data, error } = await supabase
+            .from('profiles')
+            .update({ 
+                organization_id: null, 
+                role: 'member', 
+                board_role: 'director' 
+            })
+            .eq('id', memberId)
+            .eq('organization_id', orgId) // Securely ensure they are in this org
+            .select()
+            .single();
+
+        if (error) throw error;
+        res.json({ message: 'Executive seat revoked successfully', profile: data });
+    } catch (error) {
+        console.error('[REVOKE ERROR]', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Delete Organization
+app.delete('/api/organizations/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { userId } = req.query;
+
+        // 1. Verify user is CEO of the organization
+        const { data: profile } = await supabase
+            .from('profiles')
+            .select('role, organization_id')
+            .eq('id', userId)
+            .single();
+
+        if (!profile || profile.role !== 'ceo' || profile.organization_id !== id) {
+            return res.status(403).json({ error: 'Permission denied: Only the CEO can delete the company.' });
+        }
+
+        // 2. Clear out all associations 
+        // a. Delete meetings
+        await supabase.from('meetings').delete().eq('organization_id', id);
+        // b. Delete documents
+        await supabase.from('documents').delete().eq('organization_id', id);
+        // c. Delete document_chunks
+        await supabase.from('document_chunks').delete().eq('organization_id', id);
+        // d. Delete invitations
+        await supabase.from('invitations').delete().eq('organization_id', id);
+        
+        // 3. Reset all member profiles
+        await supabase.from('profiles')
+            .update({ organization_id: null, role: 'developer', board_role: 'director' })
+            .eq('organization_id', id);
+
+        // 4. Delete the organization row itself
+        const { error: deleteError } = await supabase
+            .from('organizations')
+            .delete()
+            .eq('id', id);
+
+        if (deleteError) throw deleteError;
+
+        res.json({ success: true, message: 'Company deleted successfully' });
+    } catch (error) {
+        console.error('[DELETE ORG ERROR]', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Fetch Dashboard Stats
+app.get('/api/organizations/:orgId/dashboard-stats', async (req, res) => {
+    try {
+        const { orgId } = req.params;
+
+        // 1. Basic Counts
+        const [meetingsRes, docsRes, membersRes, chunksRes] = await Promise.all([
+            supabase.from('meetings').select('*', { count: 'exact', head: true }).eq('organization_id', orgId),
+            supabase.from('documents').select('*', { count: 'exact', head: true }).eq('organization_id', orgId),
+            supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('organization_id', orgId),
+            supabase.from('document_chunks').select('*', { count: 'exact', head: true }).eq('organization_id', orgId)
+        ]);
+
+        // 2. Action Item Analytics
+        const { data: recentMeetings } = await supabase
+            .from('meetings')
+            .select('actions')
+            .eq('organization_id', orgId)
+            .not('actions', 'is', null)
+            .order('created_at', { ascending: false })
+            .limit(10);
+
+        let totalActions = 0;
+        let completedActions = 0;
+        const recentActionsList = [];
+
+        recentMeetings?.forEach(m => {
+            const actions = typeof m.actions === 'string' ? JSON.parse(m.actions) : m.actions;
+            if (Array.isArray(actions)) {
+                actions.forEach(a => {
+                    totalActions++;
+                    if (a.status === 'done' || a.status === 'completed') completedActions++;
+                    recentActionsList.push(a);
+                });
+            }
+        });
+
+        // 3. Attendance Quorum (Last 5 meetings)
+        const { data: attendees } = await supabase
+            .from('meeting_attendees')
+            .select('matched')
+            .in('meeting_id', (await supabase.from('meetings').select('id').eq('organization_id', orgId).limit(5)).data?.map(m => m.id) || []);
+
+        const totalAttendeesPossible = (membersRes.count || 1) * 5;
+        const actualAttendees = attendees?.filter(a => a.matched).length || 0;
+        const quorum = Math.round((actualAttendees / totalAttendeesPossible) * 100);
+
+        res.json({
+            meetings_held: meetingsRes.count || 0,
+            total_documents: docsRes.count || 0,
+            active_members: membersRes.count || 0,
+            total_chunks: chunksRes.count || 0,
+            completion_rate: totalActions > 0 ? Math.round((completedActions / totalActions) * 100) : 100,
+            quorum: quorum > 100 ? 100 : quorum,
+            total_actions: totalActions,
+            recent_actions: recentActionsList.slice(0, 5)
+        });
+    } catch (error) {
+        console.error('[STATS ERROR]', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Moderating Join Requests (New Feature: Moderation Workflow)
+
+// User submits a join request using a code
+app.post('/api/organizations/join-request', async (req, res) => {
+    try {
+        const { userId, joinCode } = req.body;
+
+        // 1. Find Org by code
+        const { data: org, error: orgErr } = await supabase
+            .from('organizations')
+            .select('id, name')
+            .eq('join_code', joinCode.toUpperCase())
+            .single();
+
+        if (orgErr || !org) return res.status(404).json({ error: 'Invite code invalid.' });
+
+        // 2. Create Request
+        const { data, error } = await supabase
+            .from('join_requests')
+            .upsert({
+                user_id: userId,
+                organization_id: org.id,
+                status: 'pending'
+            }, { onConflict: 'user_id, organization_id' })
+            .select()
+            .single();
+
+        if (error) throw error;
+        res.json({ success: true, organizationName: org.name });
+    } catch (error) {
+        console.error('[JOIN REQUEST ERROR]', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// List pending requests for an org (Admin only)
+app.get('/api/organizations/:id/join-requests', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { adminId } = req.query;
+
+        // Verify admin
+        const { data: admin } = await supabase.from('profiles').select('role').eq('id', adminId).single();
+        if (!admin || !['ceo', 'manager'].includes(admin.role)) {
+            return res.status(403).json({ error: 'Permission denied.' });
+        }
+
+        const { data, error } = await supabase
+            .from('join_requests')
+            .select('*, profiles(email, display_name, id)')
+            .eq('organization_id', id)
+            .eq('status', 'pending');
+
+        if (error) throw error;
+        res.json(data);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Moderate request
+app.post('/api/organizations/:id/join-requests/:requestId/moderate', async (req, res) => {
+    try {
+        const { id, requestId } = req.params;
+        const { adminId, action } = req.body; // action: 'approve' | 'reject'
+
+        // 1. Verify admin
+        const { data: admin } = await supabase.from('profiles').select('role').eq('id', adminId).single();
+        if (!admin || !['ceo', 'manager'].includes(admin.role)) {
+            return res.status(403).json({ error: 'Permission denied.' });
+        }
+
+        const { data: request, error: reqErr } = await supabase
+            .from('join_requests')
+            .select('*')
+            .eq('id', requestId)
+            .single();
+
+        if (reqErr || !request) return res.status(404).json({ error: 'Request not found.' });
+
+        if (action === 'approve') {
+            // Update request
+            await supabase.from('join_requests').update({ status: 'approved' }).eq('id', requestId);
+            // Link user to org
+            await supabase.from('profiles').update({ 
+                organization_id: id,
+                role: 'developer'
+            }).eq('id', request.user_id);
+        } else {
+            await supabase.from('join_requests').update({ status: 'rejected' }).eq('id', requestId);
+        }
+
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get user's own request status
+app.get('/api/profiles/:userId/request-status', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { data, error } = await supabase
+            .from('join_requests')
+            .select('*, organizations(name)')
+            .eq('user_id', userId)
+            .eq('status', 'pending')
+            .maybeSingle();
+
+        if (error) throw error;
+        res.json(data);
+    } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
@@ -479,8 +821,377 @@ app.post('/api/meetings/:id/resolve-participants', async (req, res) => {
     }
 });
 
+// Get organization members (emails and display names)
+app.get('/api/organizations/:orgId/members', async (req, res) => {
+    try {
+        const { orgId } = req.params;
+        const { data, error } = await supabase
+            .from('profiles')
+            .select('email, display_name, id')
+            .eq('organization_id', orgId);
+
+        if (error) throw error;
+        res.json(data || []);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // -- HEALTH CHECK --
+// -- GOOGLE AUTH FLOW --
+
+// Get OAuth URL
+app.get('/api/auth/google/url', (req, res) => {
+    const auth = createConnection();
+    const url = auth.generateAuthUrl({
+        access_type: 'offline',
+        prompt: 'consent',
+        scope: GOOGLE_SCOPES,
+    });
+    res.json({ url });
+});
+
+// OAuth Callback
+app.get('/api/auth/google/callback', async (req, res) => {
+    try {
+        const { code, state } = req.query; // State can be user_id from frontend
+        const auth = createConnection();
+        const { tokens } = await auth.getToken(code);
+        
+        // We need user_id to save the token. Frontend should pass it or we use session.
+        // For simplicity, let's assume the frontend passes user_id in state or we expect it in header.
+        // In a real app, you'd verify the JWT from frontend.
+        
+        // Extract email to identify user if state is missing
+        auth.setCredentials(tokens);
+        const oauth2 = google.oauth2({ version: 'v2', auth });
+        const userInfo = await oauth2.userinfo.get();
+        const email = userInfo.data.email;
+
+        if (tokens.refresh_token) {
+            console.log(`[GOOGLE] Saving refresh token for ${email}`);
+            const { error } = await supabase
+                .from('profiles')
+                .update({ 
+                    google_refresh_token: tokens.refresh_token,
+                    google_connected: true 
+                })
+                .eq('email', email);
+
+            if (error) throw error;
+        }
+
+        // Redirect back to frontend
+        res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/organization?google=connected`);
+    } catch (error) {
+        console.error('[GOOGLE CALLBACK ERROR]', error);
+        res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/organization?error=google_failed`);
+    }
+});
+// -- CALENDAR SCHEDULING --
+
+app.post('/api/meetings/schedule', async (req, res) => {
+    try {
+        const { userId, organization_id, title, startTime, endTime, attendees = [], timezone } = req.body;
+
+        // 0. Check permissions (Interns cannot schedule)
+        const { data: userProfile } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', userId)
+            .single();
+
+        if (userProfile?.role === 'intern') {
+            return res.status(403).json({ error: 'Permission denied: Interns cannot schedule meetings.' });
+        }
+
+        // 1. Get user's refresh token
+        const { data: profile, error: profErr } = await supabase
+            .from('profiles')
+            .select('google_refresh_token')
+            .eq('id', userId)
+            .single();
+
+        if (profErr || !profile?.google_refresh_token) {
+            return res.status(401).json({ error: 'Google Calendar not connected' });
+        }
+
+        // 2. Setup Google Auth
+        const auth = createConnection();
+        auth.setCredentials({ refresh_token: profile.google_refresh_token });
+        // Get creator email for the notification
+        const { data: creator } = await supabase
+            .from('profiles')
+            .select('email')
+            .eq('id', userId)
+            .single();
+
+        const creatorEmail = creator?.email || 'A team member';
+
+        // 3. Create Event with Google Meet
+        const event = {
+            summary: title,
+            description: `This meeting was created by ${creatorEmail} from your organization via the Virtual Board Member AI Agent. A Google Meet link has been automatically generated and attached to this invite.`,
+            start: { 
+                dateTime: startTime,
+                timeZone: timezone || 'UTC'
+            },
+            end: { 
+                dateTime: endTime,
+                timeZone: timezone || 'UTC'
+            },
+            attendees: attendees.map(email => ({ email })),
+            conferenceData: {
+                createRequest: {
+                    requestId: uuidv4(),
+                    conferenceSolutionKey: { type: 'hangoutsMeet' }
+                }
+            }
+        };
+
+        const response = await google.calendar({ version: 'v3', auth }).events.insert({
+            calendarId: 'primary',
+            resource: event,
+            conferenceDataVersion: 1,
+            sendUpdates: 'all'
+        });
+
+        const meetLink = response.data.conferenceData?.entryPoints?.find(ep => ep.entryPointType === 'video')?.uri;
+
+        // 3. Save to our Database
+        const { data: newMeeting, error: dbErr } = await supabase
+            .from('meetings')
+            .insert({
+                organization_id,
+                title,
+                created_at: new Date().toISOString(),
+                scheduled_at: startTime,
+                recording_url: (response.data.conferenceData?.entryPoints || [])[0]?.uri || null,
+                google_event_id: response.data.id,
+                initial_attendees: attendees
+            })
+            .select()
+            .single();
+
+        if (dbErr) throw dbErr;
+        res.json({ success: true, meeting: newMeeting, meetLink: (response.data.conferenceData?.entryPoints || [])[0]?.uri });
+    } catch (error) {
+        console.error('[SCHEDULE ERROR]', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.delete('/api/meetings/schedule/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { userId } = req.query; // Need userId to get Google token
+
+        // 1. Get meeting to find google_event_id
+        const { data: meeting, error: meetingError } = await supabase
+            .from('meetings')
+            .select('*')
+            .eq('id', id)
+            .single();
+
+        if (meetingError) throw meetingError;
+
+        // 2. If it has a Google Event ID, delete from Google Calendar
+        if (meeting.google_event_id && userId) {
+            const { data: profile } = await supabase
+                .from('profiles')
+                .select('google_refresh_token')
+                .eq('id', userId)
+                .single();
+
+            if (profile?.google_refresh_token) {
+                const auth = createConnection();
+                auth.setCredentials({ refresh_token: profile.google_refresh_token });
+                const calendar = google.calendar({ version: 'v3', auth });
+                
+                try {
+                    await calendar.events.delete({
+                        calendarId: 'primary',
+                        eventId: meeting.google_event_id
+                    });
+                } catch (err) {
+                    console.error('Failed to delete from Google:', err.message);
+                    // Continue anyway to delete from our DB
+                }
+            }
+        }
+
+        // 3. Delete from our Database
+        const { error: deleteError } = await supabase
+            .from('meetings')
+            .delete()
+            .eq('id', id);
+
+        if (deleteError) throw deleteError;
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error('[DELETE SCHEDULED ERROR]', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+
+// -- MEMBER INVITATIONS --
+
+app.post('/api/organizations/invite', async (req, res) => {
+    try {
+        const { email, organization_id, inviter_id, role = 'developer' } = req.body;
+
+        // 0. Check permissions
+        const { data: inviter } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', inviter_id)
+            .single();
+
+        if (!inviter || !['ceo', 'manager'].includes(inviter.role)) {
+            return res.status(403).json({ error: 'Permission denied: Only CEOs and Managers can send invitations.' });
+        }
+
+        // 1. Create Invitation in DB
+        const { data: invite, error: inviteErr } = await supabase
+            .from('invitations')
+            .upsert({
+                email,
+                organization_id,
+                inviter_id,
+                role,
+                status: 'pending'
+            }, {
+                onConflict: 'email, organization_id'
+            })
+            .select()
+            .single();
+
+        if (inviteErr) throw inviteErr;
+
+        // 2. Get Organization Name for the email
+        const { data: org } = await supabase
+            .from('organizations')
+            .select('name')
+            .eq('id', organization_id)
+            .single();
+
+        const orgName = org?.name || 'an Organization';
+
+        // 3. Generate Invite Link
+        const inviteLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/signup?inviteId=${invite.id}&orgId=${organization_id}&email=${encodeURIComponent(email)}`;
+
+        // 4. Send the Email
+        const mailOptions = {
+            from: process.env.EMAIL_FROM,
+            to: email,
+            subject: `Executive Invitation: Join ${orgName} on Virtual Boardroom`,
+            html: `
+                <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 40px; border: 1px solid #eee; border-radius: 20px;">
+                    <h2 style="color: #6366f1; font-size: 24px; margin-bottom: 20px;">Boardroom Invitation</h2>
+                    <p style="color: #444; font-size: 16px; line-height: 1.6;">
+                        You have been invited to join <strong>${orgName}</strong> as an executive member on the Virtual Board Member AI platform.
+                    </p>
+                    <div style="margin: 30px 0; text-align: center;">
+                        <a href="${inviteLink}" style="background-color: #6366f1; color: white; padding: 16px 32px; text-decoration: none; border-radius: 12px; font-weight: bold; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">Accept Invitation</a>
+                    </div>
+                    <p style="color: #888; font-size: 12px; font-style: italic;">
+                        This link will allow you to bypass the standard organization join code. Please complete your registration using this email address: <strong>${email}</strong>.
+                    </p>
+                    <hr style="border: 0; border-top: 1px solid #eee; margin: 30px 0;">
+                    <p style="color: #aaa; font-size: 10px;">If you weren't expecting this invitation, you can safely ignore this email.</p>
+                </div>
+            `
+        };
+
+        await transporter.sendMail(mailOptions);
+        console.log(`[EMAIL SENT] To: ${email} | Link: ${inviteLink}`);
+
+        res.json({ success: true, invite });
+    } catch (error) {
+        console.error('[INVITE ERROR]', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/organizations/invite/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { data, error } = await supabase
+            .from('invitations')
+            .select('*, organizations(name)')
+            .eq('id', id)
+            .single();
+
+        if (error) throw error;
+        res.json(data);
+    } catch (error) {
+        res.status(404).json({ error: 'Invitation not found' });
+    }
+});
+
+app.post('/api/organizations/claim-invite', async (req, res) => {
+    try {
+        const { userId, email } = req.body;
+
+        // Find pending invite (case insensitive)
+        const { data: invite, error: inviteErr } = await supabase
+            .from('invitations')
+            .select('*')
+            .ilike('email', email)
+            .eq('status', 'pending')
+            .single();
+
+        if (inviteErr || !invite) {
+            return res.status(404).json({ error: 'No pending invitation found' });
+        }
+
+        // Self-healing: Ensure profile exists
+        const { data: existingProfile } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('id', userId)
+            .single();
+
+        if (!existingProfile) {
+            // Create profile if missing
+            await supabase
+                .from('profiles')
+                .insert({
+                    id: userId,
+                    email: email,
+                    organization_id: invite.organization_id,
+                    role: invite.role || 'member'
+                });
+        } else {
+            // Link existing user to organization
+            const { error: updateErr } = await supabase
+                .from('profiles')
+                .update({
+                    organization_id: invite.organization_id,
+                    role: invite.role || 'member'
+                })
+                .eq('id', userId);
+
+            if (updateErr) throw updateErr;
+        }
+
+        // Mark invite as accepted
+        await supabase
+            .from('invitations')
+            .update({ status: 'accepted' })
+            .eq('id', invite.id);
+
+        res.json({ success: true, organization_id: invite.organization_id });
+    } catch (error) {
+        console.error('[CLAIM ERROR]', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.get('/api/documents/health', async (req, res) => {
+
     try {
         const { count: docCount, error: docError } = await supabase
             .from('documents')
@@ -500,6 +1211,75 @@ app.get('/api/documents/health', async (req, res) => {
         res.status(500).json({ status: 'error', error: error.message });
     }
 });
+
+// --- AUTO-JOIN MEETINGS WORKER ---
+// This worker checks for scheduled meetings and automatically joins them
+async function autoJoinMeetings() {
+    try {
+        const now = new Date();
+        const lookAhead = new Date(now.getTime() + 5 * 60000); // 5 minutes ahead
+        const lookBehind = new Date(now.getTime() - 5 * 60000); // 5 minutes behind (to catch missed ones)
+
+        const { data: meetings, error } = await supabase
+            .from('meetings')
+            .select('*')
+            .is('recall_bot_id', null)
+            .neq('bot_join_status', 'joined')
+            .not('recording_url', 'is', null) // recording_url stores the Meet link initially
+            .gte('scheduled_at', lookBehind.toISOString())
+            .lte('scheduled_at', lookAhead.toISOString());
+
+        if (error) {
+            console.error('[AUTO-BOT] Error fetching upcoming meetings:', error.message);
+            return;
+        }
+
+        if (!meetings || meetings.length === 0) return;
+
+        for (const meeting of meetings) {
+            console.log(`[AUTO-BOT] 🤖 Bot auto-joining meeting: ${meeting.title} (${meeting.recording_url})`);
+            
+            try {
+                const payload = {
+                    meeting_url: meeting.recording_url,
+                    recording_config: {
+                        transcript: {
+                            provider: {
+                                recallai_streaming: {
+                                    mode: 'prioritize_accuracy',
+                                    language_code: 'auto'
+                                }
+                            }
+                        }
+                    }
+                };
+
+                const response = await recallClient.post('/bot/', payload);
+                const botId = response.data.id;
+
+                await supabase.from('meetings').update({
+                    recall_bot_id: botId,
+                    bot_join_status: 'joined'
+                }).eq('id', meeting.id);
+
+                console.log(`[AUTO-BOT] ✅ Successfully joined ${meeting.title}. Bot ID: ${botId}`);
+            } catch (botErr) {
+                console.error(`[AUTO-BOT] ❌ Failed to join ${meeting.title}:`, botErr.response?.data || botErr.message);
+                
+                // If it's a 400 with 'meeting_url_invalid', we might want to mark as failed
+                await supabase.from('meetings').update({
+                    bot_join_status: 'failed'
+                }).eq('id', meeting.id);
+            }
+        }
+    } catch (err) {
+        console.error('[AUTO-BOT] Worker error:', err.message);
+    }
+}
+
+// Start the worker immediately and then every 60 seconds
+autoJoinMeetings();
+setInterval(autoJoinMeetings, 60000);
 
 app.listen(port, () => {
     console.log(`Backend listening at http://localhost:${port}`);

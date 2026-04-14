@@ -2,26 +2,34 @@
 
 import { useEffect, useState } from 'react';
 import { createClient } from '@/utils/supabase';
-import { Shield, Users, Copy, CheckCircle2, RotateCcw, UserCircle, Briefcase, LayoutDashboard, Settings, ShieldAlert, ChevronDown, Pencil, Check, X } from 'lucide-react';
+import { Plus, Users, Calendar, Clock, ChevronRight, FileText, Search, Settings, Building2, UserCircle, Globe, Mail, Shield, Zap, X, Terminal, Database, Cpu, PieChart, Layout, Play, Filter, Download, ExternalLink, RefreshCw, Copy, CheckCircle2, RotateCcw, Briefcase, LayoutDashboard, ShieldAlert, ChevronDown, Pencil, Check, TrendingUp, Target, BookOpen, Trash2, Activity, Video, Trash } from 'lucide-react';
+import ScheduleMeetingModal from '@/components/ScheduleMeetingModal';
 import { useRouter } from 'next/navigation';
 import axios from 'axios';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
 
+const APP_ROLES: Record<string, { label: string, color: string }> = {
+    ceo: { label: 'CEO', color: 'bg-primary/20 text-primary' },
+    manager: { label: 'Manager', color: 'bg-primary/10 text-primary' },
+    developer: { label: 'Developer', color: 'bg-foreground/5 text-foreground/60' },
+    intern: { label: 'Intern', color: 'bg-foreground/5 text-foreground/40' }
+};
+
 const BOARD_ROLES: Record<string, string> = {
-    board_chair: 'Board Chair',
+    board_chair: 'Chairman',
     director: 'Director',
-    company_secretary: 'Company Secretary',
-    legal_compliance: 'Legal & Compliance',
-    ceo_exec: 'CEO/Executive'
+    company_secretary: 'Secretary',
+    legal_compliance: 'Legal',
+    ceo_exec: 'CEO/Manager'
 };
 
 const BOARD_ROLE_COLORS: Record<string, string> = {
-    board_chair: 'bg-amber-500/20 text-amber-400',
-    director: 'bg-primary/20 text-primary',
-    company_secretary: 'bg-blue-500/20 text-blue-400',
-    legal_compliance: 'bg-purple-500/20 text-purple-400',
-    ceo_exec: 'bg-emerald-500/20 text-emerald-400'
+    board_chair: 'bg-primary/20 text-primary',
+    director: 'bg-foreground/5 text-foreground/60',
+    company_secretary: 'bg-foreground/5 text-foreground/60',
+    legal_compliance: 'bg-foreground/5 text-foreground/60',
+    ceo_exec: 'bg-primary/10 text-primary'
 };
 
 export default function OrganizationSuite() {
@@ -35,8 +43,24 @@ export default function OrganizationSuite() {
     const [newOrgName, setNewOrgName] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
+    const [editingRoleMemberId, setEditingRoleMemberId] = useState<string | null>(null);
     const [editingDisplayName, setEditingDisplayName] = useState<string | null>(null);
     const [displayNameInput, setDisplayNameInput] = useState('');
+    const [stats, setStats] = useState<any>(null);
+    const [activeTab, setActiveTab] = useState<'overview' | 'governance' | 'scheduler'>('overview');
+    const [isSchedulingModalOpen, setIsSchedulingModalOpen] = useState(false);
+    const [scheduledMeetings, setScheduledMeetings] = useState<any[]>([]);
+    const [timezone, setTimezone] = useState('UTC');
+    const [inviteEmail, setInviteEmail] = useState('');
+    const [isInviting, setIsInviting] = useState(false);
+    const [activeInviteLink, setActiveInviteLink] = useState<string | null>(null);
+    const [pendingRequest, setPendingRequest] = useState<any>(null);
+    const [joinRequests, setJoinRequests] = useState<any[]>([]);
+
+    useEffect(() => {
+        setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone);
+    }, []);
+
 
     const supabase = createClient();
     const router = useRouter();
@@ -90,10 +114,53 @@ export default function OrganizationSuite() {
                 setOrganization(null);
                 setUserProfile(profile);
                 setMembers([]);
+
+                // AUTO-CLAIM PENDING INVITE
+                if (profile && !profile.organization_id) {
+                    try {
+                        const { data: claimData } = await axios.post(`${BACKEND_URL}/api/organizations/claim-invite`, {
+                            userId: profile.id,
+                            email: profile.email
+                        });
+                        if (claimData.success) {
+                            window.location.reload();
+                        }
+                    } catch (err) {
+                        console.log('No pending invite to auto-claim');
+                    }
+                }
             }
+
+            // 3. Fetch Analytics
+            if (profile?.organization_id) {
+                const statsRes = await axios.get(`${BACKEND_URL}/api/organizations/${profile.organization_id}/dashboard-stats`);
+                setStats(statsRes.data);
+
+                // Fetch real meetings
+                const { data: mtgs } = await supabase
+                    .from('meetings')
+                    .select('*')
+                    .eq('organization_id', profile.organization_id)
+                    .order('created_at', { ascending: false })
+                    .limit(10);
+                setScheduledMeetings(mtgs || []);
+            }
+
+            // 4. Check for pending requests if no org
+            if (!profile?.organization_id) {
+                const { data: reqStatus } = await axios.get(`${BACKEND_URL}/api/profiles/${session.user.id}/request-status`);
+                setPendingRequest(reqStatus);
+            } else if (profile?.role === 'ceo' || profile?.role === 'manager') {
+                // 5. If admin, check for pending requests to approve
+                const { data: requests } = await axios.get(`${BACKEND_URL}/api/organizations/${profile.organization_id}/join-requests`, {
+                    params: { adminId: profile.id }
+                });
+                setJoinRequests(requests || []);
+            }
+
         } catch (err: any) {
-            console.error('Boardroom Persistence Error:', err);
-            setError(err.message || 'Governance Sync Interrupted');
+            console.error('Data Loading Error:', err);
+            setError(err.message || 'Loading failed');
         } finally {
             setLoading(false);
         }
@@ -117,28 +184,21 @@ export default function OrganizationSuite() {
 
         try {
             const { data: { session } } = await supabase.auth.getSession();
-            if (!session?.user?.id) throw new Error("Executive Seat Verification Failed.");
+            if (!session?.user?.id) throw new Error("User check failed.");
 
-            const { data: orgData, error: orgError } = await supabase
-                .from('organizations')
-                .select('id')
-                .eq('join_code', newJoinCode.toUpperCase())
-                .maybeSingle();
-
-            if (orgError) throw orgError;
-            if (!orgData) throw new Error("Seat Code Expired or Invalid.");
-
-            const { error: updateError } = await supabase.from('profiles').upsert({
-                id: session.user.id,
-                email: session.user.email,
-                organization_id: orgData.id,
-                role: 'member'
+            const { data } = await axios.post(`${BACKEND_URL}/api/organizations/join-request`, {
+                userId: session.user.id,
+                joinCode: newJoinCode
             });
 
-            if (updateError) throw updateError;
-            await loadData();
+            if (data.success) {
+                alert(`Request sent to join ${data.organizationName}! Please wait for approval.`);
+                setPendingRequest({ organizations: { name: data.organizationName } });
+                setNewJoinCode('');
+            }
         } catch (err: any) {
-            setError(err.message);
+            setError(err.response?.data?.error || err.message);
+        } finally {
             setLoading(false);
         }
     };
@@ -164,7 +224,7 @@ export default function OrganizationSuite() {
                 .single();
 
             if (newOrgError) {
-                if (newOrgError.code === '23505') throw new Error("This Identity is already registered in our boardroom.");
+                if (newOrgError.code === '23505') throw new Error("This company name is already taken.");
                 throw newOrgError;
             }
 
@@ -173,7 +233,7 @@ export default function OrganizationSuite() {
                 id: session.user.id,
                 email: session.user.email,
                 organization_id: newOrg.id,
-                role: 'owner'
+                role: 'ceo'
             });
 
             if (updateError) throw updateError;
@@ -186,25 +246,129 @@ export default function OrganizationSuite() {
 
     const handleBoardRoleChange = async (memberId: string, newRole: string) => {
         try {
-            await axios.patch(`${BACKEND_URL}/api/profiles/${memberId}/board-role`, { board_role: newRole });
-            setMembers(prev => prev.map(m => m.id === memberId ? { ...m, board_role: newRole } : m));
+            await axios.patch(`${BACKEND_URL}/api/profiles/${memberId}/board-role`, { 
+                board_role: newRole,
+                adminId: userProfile?.id
+            });
+            setMembers((prev: any[]) => prev.map((m: any) => m.id === memberId ? { ...m, board_role: newRole } : m));
             setEditingMemberId(null);
         } catch (err: any) {
             console.error('Failed to update board role:', err);
+            alert(err.response?.data?.error || 'Failed to update board role');
+        }
+    };
+
+    const handleOrgRoleChange = async (memberId: string, newRole: string) => {
+        try {
+            await axios.patch(`${BACKEND_URL}/api/profiles/${memberId}/board-role`, { 
+                role: newRole,
+                adminId: userProfile?.id
+            });
+            setMembers((prev: any[]) => prev.map((m: any) => m.id === memberId ? { ...m, role: newRole } : m));
+            setEditingRoleMemberId(null);
+        } catch (err: any) {
+            console.error('Failed to update org role:', err);
+            alert(err.response?.data?.error || 'Failed to update org role');
         }
     };
 
     const handleDisplayNameSave = async (memberId: string) => {
         try {
             await axios.patch(`${BACKEND_URL}/api/profiles/${memberId}/board-role`, { display_name: displayNameInput || null });
-            setMembers(prev => prev.map(m => m.id === memberId ? { ...m, display_name: displayNameInput || null } : m));
+            setMembers((prev: any[]) => prev.map((m: any) => m.id === memberId ? { ...m, display_name: displayNameInput || null } : m));
             setEditingDisplayName(null);
         } catch (err: any) {
             console.error('Failed to update display name:', err);
         }
     };
 
-    const canEditRoles = userProfile?.role === 'owner' || userProfile?.role === 'admin';
+    const handleRevokeSeat = async (memberId: string) => {
+        if (!confirm("Are you sure you want to delete this user? Access to files and history will be lost immediately.")) return;
+        try {
+            await axios.delete(`${BACKEND_URL}/api/organizations/${organization.id}/members/${memberId}`);
+            setMembers((prev: any[]) => prev.filter((m: any) => m.id !== memberId));
+        } catch (err: any) {
+            console.error('Failed to revoke seat:', err);
+            alert('Failed to revoke seat: ' + (err.response?.data?.error || err.message));
+        }
+    };
+
+    const handleDeleteScheduledMeeting = async (meetingId: string) => {
+        if (!confirm("Are you sure you want to cancel this meeting? It will be removed from both this app and your Google Calendar.")) return;
+        try {
+            await axios.delete(`${BACKEND_URL}/api/meetings/schedule/${meetingId}`, {
+                params: { userId: userProfile?.id }
+            });
+            setScheduledMeetings((prev: any[]) => prev.filter((m: any) => m.id !== meetingId));
+        } catch (err: any) {
+            console.error('Failed to delete meeting:', err);
+            alert('Failed to delete meeting: ' + (err.response?.data?.error || err.message));
+        }
+    };
+    const handleDeleteCompany = async () => {
+        if (!confirm("CRITICAL WARNING: This will delete the entire organization, all meetings, transcripts, and documents for EVERY member. This action cannot be undone. Are you sure?")) return;
+        
+        const password = prompt("Please type DELETE to confirm:");
+        if (password !== "DELETE") return;
+
+        setLoading(true);
+        try {
+            await axios.delete(`${BACKEND_URL}/api/organizations/${organization.id}`, {
+                params: { userId: userProfile?.id }
+            });
+            window.location.reload();
+        } catch (err: any) {
+            console.error('Failed to delete organization:', err);
+            alert('Failed to delete organization: ' + (err.response?.data?.error || err.message));
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleModerateRequest = async (requestId: string, action: 'approve' | 'reject') => {
+        try {
+            await axios.post(`${BACKEND_URL}/api/organizations/${organization.id}/join-requests/${requestId}/moderate`, {
+                adminId: userProfile?.id,
+                action
+            });
+            setJoinRequests((prev: any[]) => prev.filter((r: any) => r.id !== requestId));
+            if (action === 'approve') {
+                await loadData(); // Refresh member list
+            }
+        } catch (err: any) {
+            alert('Failed to moderate request: ' + (err.response?.data?.error || err.message));
+        }
+    };
+
+
+    const handleInviteMember = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!inviteEmail) return;
+        setIsInviting(true);
+        setActiveInviteLink(null);
+        try {
+            const { data } = await axios.post(`${BACKEND_URL}/api/organizations/invite`, {
+                email: inviteEmail,
+                organization_id: organization?.id,
+                inviter_id: userProfile?.id,
+                role: 'developer'
+            });
+            if (data.success) {
+                setActiveInviteLink(data.inviteLink);
+                setInviteEmail('');
+                alert('Invitation link generated! You can copy it below.');
+            }
+        } catch (err: any) {
+            console.error('Invite Error:', err);
+            alert('Failed to generate invite: ' + (err.response?.data?.error || err.message));
+        } finally {
+            setIsInviting(false);
+        }
+    };
+
+    const canInvite = userProfile?.role === 'ceo' || userProfile?.role === 'manager';
+    const canManageRoles = userProfile?.role === 'ceo';
+    const canSchedule = userProfile?.role !== 'intern';
 
     if (loading && !userProfile) return (
         <div className="flex items-center justify-center min-h-[60vh]">
@@ -219,8 +383,8 @@ export default function OrganizationSuite() {
                     <div className="w-16 h-16 rounded-[24px] bg-primary/10 flex items-center justify-center text-primary mx-auto mb-8 ring-8 ring-primary/5">
                         <Briefcase className="w-8 h-8" />
                     </div>
-                    <h1 className="text-4xl font-serif font-medium text-foreground">Governance Gate</h1>
-                    <p className="text-foreground/40 text-sm font-medium italic">You are currently unassigned.</p>
+                    <h1 className="text-4xl font-serif font-medium text-foreground">Team Portal</h1>
+                    <p className="text-foreground/40 text-sm font-medium italic">You haven't joined a company yet.</p>
                 </div>
 
                 <div className="flex p-1 rounded-2xl bg-white/[0.02] border border-white/5">
@@ -228,7 +392,7 @@ export default function OrganizationSuite() {
                         onClick={() => setIsJoining(true)}
                         className={`flex-1 py-3 rounded-xl text-[10px] uppercase font-black tracking-widest transition-all ${isJoining ? 'bg-primary text-background' : 'text-foreground/40 hover:text-foreground/60'}`}
                     >
-                        Join Boardroom
+                        Join Company
                     </button>
                     <button
                         onClick={() => setIsJoining(false)}
@@ -246,198 +410,589 @@ export default function OrganizationSuite() {
                         </div>
                     )}
 
-                    {isJoining ? (
-                        <div className="space-y-2 group">
-                            <label className="text-[10px] font-black uppercase tracking-widest text-primary ml-1 italic font-bold">6-Digit Seat Code</label>
-                            <input
-                                type="text"
-                                required
-                                placeholder="EX: ABCDEF"
-                                value={newJoinCode}
-                                maxLength={6}
-                                onChange={(e) => setNewJoinCode(e.target.value.toUpperCase())}
-                                className="w-full h-14 px-6 rounded-2xl bg-white/[0.02] border border-white/5 focus:border-primary focus:bg-white/[0.04] text-foreground font-mono text-xl tracking-[0.5em] text-center outline-none transition-all placeholder:text-foreground/10"
-                            />
+                    {pendingRequest ? (
+                        <div className="p-10 rounded-3xl bg-primary/5 border border-primary/20 text-center space-y-6 animate-in zoom-in-95">
+                            <Clock className="w-12 h-12 text-primary mx-auto animate-pulse" />
+                            <div className="space-y-2">
+                                <h3 className="text-xl font-serif text-primary uppercase tracking-widest font-bold">Request Pending</h3>
+                                <p className="text-foreground/40 text-xs italic font-medium">You have requested to join <span className="text-primary font-black">{pendingRequest.organizations?.name}</span>. An admin must approve your request before you can enter.</p>
+                            </div>
+                            <button 
+                                onClick={() => setPendingRequest(null)}
+                                className="text-[10px] font-black uppercase tracking-[0.2em] text-primary/40 hover:text-primary transition-colors"
+                            >
+                                Cancel Request
+                            </button>
                         </div>
                     ) : (
-                        <div className="space-y-2 group">
-                            <label className="text-[10px] font-black uppercase tracking-widest text-primary ml-1 italic font-bold">Corporate Identity</label>
-                            <input
-                                type="text"
-                                required
-                                placeholder="EX: Cogniify"
-                                value={newOrgName}
-                                onChange={(e) => setNewOrgName(e.target.value)}
-                                className="w-full h-14 px-6 rounded-2xl bg-white/[0.02] border border-white/5 focus:border-primary focus:bg-white/[0.04] text-foreground outline-none transition-all"
-                            />
-                        </div>
-                    )}
+                        <>
+                            {isJoining ? (
+                                <div className="space-y-2 group">
+                                    <label className="text-[10px] font-black uppercase tracking-widest text-primary ml-1 italic font-bold">6-Digit Invite Code</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        placeholder="EX: ABCDEF"
+                                        value={newJoinCode}
+                                        maxLength={6}
+                                        onChange={(e) => setNewJoinCode(e.target.value.toUpperCase())}
+                                        className="w-full h-14 px-6 rounded-2xl bg-white/[0.02] border border-white/5 focus:border-primary focus:bg-white/[0.04] text-foreground font-mono text-xl tracking-[0.5em] text-center outline-none transition-all placeholder:text-foreground/10"
+                                    />
+                                </div>
+                            ) : (
+                                <div className="space-y-2 group">
+                                    <label className="text-[10px] font-black uppercase tracking-widest text-primary ml-1 italic font-bold">Company Name</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        placeholder="EX: Cogniify"
+                                        value={newOrgName}
+                                        onChange={(e) => setNewOrgName(e.target.value)}
+                                        className="w-full h-14 px-6 rounded-2xl bg-white/[0.02] border border-white/5 focus:border-primary focus:bg-white/[0.04] text-foreground outline-none transition-all"
+                                    />
+                                </div>
+                            )}
 
-                    <button disabled={loading} className="w-full h-14 bg-primary hover:bg-primary/95 text-background rounded-2xl font-black text-sm uppercase tracking-widest flex items-center justify-center gap-3 transition-all active:scale-95 disabled:opacity-50">
-                        {loading ? <RotateCcw className="w-5 h-5 animate-spin" /> : (
-                            <span>{isJoining ? 'Finalize Seat' : 'Launch Organization'}</span>
-                        )}
-                    </button>
+                            <button disabled={loading} className="w-full h-14 bg-primary hover:bg-primary/95 text-background rounded-2xl font-black text-sm uppercase tracking-widest flex items-center justify-center gap-3 transition-all active:scale-95 disabled:opacity-50">
+                                {loading ? <RotateCcw className="w-5 h-5 animate-spin" /> : (
+                                    <span>{isJoining ? 'Join Team' : 'Create Company'}</span>
+                                )}
+                            </button>
+                        </>
+                    )}
                 </form>
             </div>
         </div>
     );
 
     return (
-        <div className="p-8 max-w-6xl mx-auto space-y-12 animate-in fade-in duration-1000">
-            <header className="flex flex-col md:flex-row md:items-end justify-between gap-8 border-b border-white/5 pb-12">
+        <div className="p-8 max-w-7xl mx-auto space-y-12 animate-in fade-in duration-1000">
+            {/* Executive Branding Header */}
+            <header className="flex flex-col md:flex-row md:items-end justify-between gap-8 border-b border-white/5 pb-10">
                 <div className="space-y-4">
                     <div className="flex items-center gap-3 text-primary uppercase font-black tracking-[0.3em] text-[10px]">
-                        <LayoutDashboard className="w-4 h-4" />
-                        <span>Corporate Suite</span>
+                        <Shield className="w-4 h-4" />
+                        <span>AI Assistant</span>
                     </div>
-                    <h1 className="text-6xl font-serif font-medium">{organization.name}</h1>
-                    <p className="text-foreground/40 font-medium font-black italic uppercase tracking-widest text-[10px]">Boardroom Intelligence Suite & Member Directory</p>
+                    <h1 className="text-6xl font-serif font-medium leading-none tracking-tight">{organization.name}</h1>
+                    <p className="text-foreground/40 font-medium font-black italic uppercase tracking-widest text-[10px]">Management Dashboard & Records</p>
                 </div>
 
-                <div className="p-6 rounded-[24px] bg-white/[0.01] border border-white/5 space-y-3 min-w-[320px] relative overflow-hidden group">
-                    <div className="absolute inset-0 bg-primary/5 translate-y-full group-hover:translate-y-0 transition-transform duration-500" />
-                    <div className="relative z-10">
-                        <div className="flex items-center justify-between mb-4">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-foreground/40 font-bold">Boardroom Join Code</span>
-                            <Shield className="w-4 h-4 text-primary" />
-                        </div>
-                        <div className="flex items-center justify-between gap-4">
-                            <code className="text-4xl font-mono font-black text-primary tracking-widest">{organization.join_code}</code>
-                            <button
-                                onClick={copyCode}
-                                className="p-3 rounded-xl bg-primary/10 text-primary hover:bg-primary hover:text-background transition-all active:scale-95"
-                            >
-                                {copied ? <CheckCircle2 className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
-                            </button>
-                        </div>
-                        <p className="mt-4 text-[9px] font-bold text-foreground/20 leading-tight italic">Share this unique code to invite executive members to your boardroom.</p>
-                    </div>
+                {/* Tab Navigation */}
+                <div className="flex p-1 rounded-2xl bg-white/[0.02] border border-white/5">
+                    <button 
+                        onClick={() => setActiveTab('overview')}
+                        className={`px-8 py-3 rounded-xl text-[10px] uppercase font-black tracking-widest transition-all flex items-center gap-2 ${activeTab === 'overview' ? 'bg-primary text-background' : 'text-foreground/40 hover:text-foreground/60'}`}
+                    >
+                        <LayoutDashboard className="w-4 h-4" />
+                        Overview
+                    </button>
+                    <button 
+                        onClick={() => setActiveTab('governance')}
+                        className={`px-8 py-3 rounded-xl text-[10px] uppercase font-black tracking-widest transition-all flex items-center gap-2 ${activeTab === 'governance' ? 'bg-primary text-background' : 'text-foreground/40 hover:text-foreground/60'}`}
+                    >
+                        <ShieldAlert className="w-4 h-4" />
+                        Team
+                    </button>
+                    <button 
+                        onClick={() => setActiveTab('scheduler')}
+                        className={`px-8 py-3 rounded-xl text-[10px] uppercase font-black tracking-widest transition-all flex items-center gap-2 ${activeTab === 'scheduler' ? 'bg-primary text-background' : 'text-foreground/40 hover:text-foreground/60'}`}
+                    >
+                        <Calendar className="w-4 h-4" />
+                        Calendar
+                    </button>
                 </div>
             </header>
 
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-                <div className="lg:col-span-1 space-y-6">
-                    <div className="p-6 rounded-[32px] bg-white/[0.01] border border-white/5 space-y-6">
-                        <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-primary/60 font-bold">
-                            <Settings className="w-3 h-3" />
-                            <span>Suite Settings</span>
-                        </div>
-                        <div className="space-y-3">
-                            <button className="w-full py-3 px-4 rounded-xl bg-white/5 border border-white/10 text-[10px] font-black uppercase tracking-widest text-foreground/40 hover:text-foreground hover:bg-white/10 transition-all text-left">
-                                Manage Subscription
-                            </button>
-                            <button className="w-full py-3 px-4 rounded-xl bg-red-500/5 border border-red-500/10 text-[10px] font-black uppercase tracking-widest text-red-500/40 hover:text-red-500 hover:bg-red-500/10 transition-all text-left">
-                                Dissolve Organization
+            {activeTab === 'overview' && (
+                <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                    {/* Metrics Grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                        {[
+                            { label: 'Meeting Count', value: stats?.meetings_held || 0, sub: 'Meetings Held', icon: Activity, color: 'text-primary' },
+                            { label: 'Attendance', value: `${stats?.quorum || 0}%`, sub: 'Meeting Presence', icon: Target, color: 'text-foreground/40' },
+                            { label: 'File Count', value: stats?.total_chunks || 0, sub: 'Bits of Info', icon: BookOpen, color: 'text-foreground/40' },
+                            { label: 'Task Progress', value: `${stats?.completion_rate || 0}%`, sub: 'How much is done', icon: Zap, color: 'text-foreground/40' }
+                        ].map((stat, i) => (
+                            <div key={i} className="p-8 rounded-[40px] bg-white/[0.01] border border-white/5 space-y-4 hover:bg-white/[0.03] transition-all group">
+                                <div className="flex items-center justify-between">
+                                    <div className={`p-3 rounded-2xl bg-white/5 ${stat.color} group-hover:scale-110 transition-transform`}>
+                                        <stat.icon className="w-5 h-5" />
+                                    </div>
+                                    <TrendingUp className="w-4 h-4 text-foreground/5" />
+                                </div>
+                                <div>
+                                    <div className="text-4xl font-bold font-serif mb-1">{stat.value}</div>
+                                    <div className="text-[10px] uppercase font-black tracking-widest text-foreground/20">{stat.label}</div>
+                                    <div className="text-[9px] text-foreground/40 italic font-medium">{stat.sub}</div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* AI Insight Strip */}
+                    <div className="relative group">
+                        <div className="relative p-10 rounded-[32px] bg-surface-low border border-border flex flex-col md:flex-row items-center gap-10">
+                            <div className="w-20 h-20 rounded-[24px] bg-primary/5 flex items-center justify-center text-primary shrink-0 relative overflow-hidden">
+                                <Zap className="w-10 h-10 relative z-10 animate-pulse" />
+                                <div className="absolute inset-0 bg-primary/10 animate-ping" />
+                            </div>
+                            <div className="space-y-3">
+                                <div className="text-[10px] uppercase font-black tracking-widest text-primary flex items-center gap-2">
+                                    <Activity className="w-3 h-3" />
+                                    AI Summary
+                                </div>
+                                <h3 className="text-2xl font-serif text-foreground/90 italic leading-snug">
+                                    {stats?.meetings_held > 0 
+                                      ? `The AI has learned from ${stats.total_chunks} bits of info. You have had ${stats.meetings_held} meetings so far.`
+                                      : "Set up your team by uploading company documents."}
+                                </h3>
+                                <p className="text-foreground/30 text-xs font-medium max-w-2xl">
+                                    The AI is looking at your meetings. About {stats?.completion_rate}% of your tasks are done.
+                                </p>
+                            </div>
+                            <button onClick={() => router.push('/chat')} className="ml-auto px-8 py-4 bg-primary text-background rounded-2xl font-black text-[10px] uppercase tracking-widest hover:scale-105 transition-all active:scale-95 shrink-0">
+                                Consult Advisor
                             </button>
                         </div>
                     </div>
-                </div>
 
-                <div className="lg:col-span-3 space-y-8">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                            <h2 className="text-2xl font-serif font-medium">Boardroom Members</h2>
-                            <div className="px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-[10px] font-black uppercase tracking-widest text-primary">
-                                {members.length} Registered Executive Seats
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        {/* Task List */}
+                        <div className="lg:col-span-2 space-y-6">
+                           <div className="flex items-center justify-between">
+                                <h3 className="text-2xl font-serif">Task List</h3>
+                                <button onClick={() => router.push('/meetings')} className="text-[9px] font-black uppercase tracking-widest text-primary/60 hover:text-primary transition-colors flex items-center gap-1.5">
+                                    View All <ChevronDown className="w-3 h-3 -rotate-90" />
+                                </button>
+                           </div>
+                           <div className="space-y-4">
+                               {stats?.recent_actions && stats.recent_actions.length > 0 ? (
+                                   stats.recent_actions.map((action: any, i: number) => (
+                                       <div key={i} className="p-6 rounded-3xl bg-white/[0.01] border border-white/5 flex items-center justify-between group hover:bg-white/[0.03] transition-all">
+                                            <div className="flex items-center gap-6">
+                                                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${action.status === 'done' ? 'bg-primary/10 text-primary' : 'bg-white/5 text-foreground/20'}`}>
+                                                    <CheckCircle2 className="w-5 h-5" />
+                                                </div>
+                                                <div>
+                                                    <div className={`font-bold ${action.status === 'done' ? 'text-foreground/40 line-through' : 'text-foreground/80'}`}>{action.task}</div>
+                                                    <div className="flex items-center gap-3 text-[9px] uppercase font-black tracking-widest text-foreground/20 italic">
+                                                        <span>{action.owner || 'Unassigned'}</span>
+                                                        <div className="w-1 h-1 rounded-full bg-white/10" />
+                                                        <span>Due: {action.deadline || 'N/A'}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <span className={`text-[8px] uppercase font-black tracking-widest px-2 py-0.5 rounded-full ${action.status === 'done' ? 'bg-primary/20 text-primary' : 'bg-white/5 text-foreground/20'}`}>
+                                                {action.status || 'Pending'}
+                                            </span>
+                                       </div>
+                                   ))
+                               ) : (
+                                   <div className="py-20 rounded-3xl bg-white/[0.01] border border-dashed border-white/10 flex flex-col items-center justify-center text-center space-y-4">
+                                        <Zap className="w-10 h-10 text-foreground/10" />
+                                        <div className="text-[10px] uppercase font-black tracking-widest text-foreground/20">No tasks found.</div>
+                                   </div>
+                               )}
+                           </div>
+                        </div>
+
+                        {/* Quick Stats sidebar */}
+                        <div className="space-y-6">
+                            <h3 className="text-2xl font-serif">Status</h3>
+                            <div className="p-8 rounded-[40px] bg-white/[0.01] border border-white/5 space-y-8">
+                                <div className="space-y-2">
+                                    <div className="flex justify-between text-[10px] font-black uppercase tracking-widest mb-2">
+                                        <span className="text-foreground/40">Knowledge Sync</span>
+                                        <span className="text-primary">{stats?.total_chunks ? 'Active' : 'Empty'}</span>
+                                    </div>
+                                    <div className="h-2 rounded-full bg-white/5 overflow-hidden">
+                                        <div className="h-full bg-primary" style={{ width: stats?.total_chunks > 0 ? '85%' : '0%' }} />
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <div className="flex justify-between text-[10px] font-black uppercase tracking-widest mb-2">
+                                        <span className="text-foreground/40">Operational Trust</span>
+                                        <span className="text-primary">{stats?.quorum || 0}%</span>
+                                    </div>
+                                    <div className="h-2 rounded-full bg-white/5 overflow-hidden">
+                                        <div className="h-full bg-primary" style={{ width: `${stats?.quorum || 0}%` }} />
+                                    </div>
+                                </div>
+                                <div className="space-y-4 pt-4 border-t border-white/5">
+                                    <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-foreground/40 italic font-bold">
+                                        <Users className="w-4 h-4" />
+                                        {stats?.active_members} Team Members
+                                    </div>
+                                    <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-foreground/40 italic font-bold">
+                                        <BookOpen className="w-4 h-4" />
+                                        {stats?.total_documents} Saved Files
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
+                </div>
+            )}
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {members.map((member) => {
-                            const boardRole = member.board_role || 'director';
-                            const roleLabel = BOARD_ROLES[boardRole] || boardRole;
-                            const roleColor = BOARD_ROLE_COLORS[boardRole] || 'bg-white/5 text-foreground/40';
-                            const isEditingRole = editingMemberId === member.id;
-                            const isEditingName = editingDisplayName === member.id;
-                            const isOwnCard = member.id === (userProfile?.id || "");
-
-                            return (
-                                <div key={member.id} className="p-6 rounded-[32px] border border-white/5 bg-white/[0.01] hover:bg-white/[0.03] transition-all group flex items-start gap-4">
-                                    <div className="w-12 h-12 rounded-[20px] bg-primary/5 flex items-center justify-center text-primary/40 group-hover:text-primary transition-colors">
-                                        <UserCircle className="w-8 h-8" />
+            {activeTab === 'governance' && (
+                <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+                        <div className="lg:col-span-1 space-y-6">
+                            <div className="p-8 rounded-[40px] bg-primary/5 border border-primary/20 space-y-6 relative overflow-hidden group">
+                                <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-full blur-3xl -mr-16 -mt-16" />
+                                <div className="relative z-10 space-y-6">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-[10px] font-black uppercase tracking-widest text-primary font-bold">Invite Code</span>
+                                        <Shield className="w-5 h-5 text-primary" />
                                     </div>
-                                    <div className="space-y-2 flex-1">
-                                        <div className="flex items-center justify-between">
-                                            <h3 className="font-bold text-foreground/80">{member.username || member.email}</h3>
-                                            <span className={`text-[8px] uppercase font-black tracking-widest px-2 py-0.5 rounded-full ${member.role === 'owner' ? 'bg-white/10 text-foreground/30' : 'bg-white/5 text-foreground/20'}`}>
-                                                {member.role}
-                                            </span>
-                                        </div>
+                                    <div className="flex items-center justify-between gap-4">
+                                        <code className="text-4xl font-mono font-black text-primary tracking-widest">{organization.join_code}</code>
+                                        <button onClick={copyCode} className="p-3 rounded-2xl bg-primary text-background hover:scale-105 transition-all active:scale-95">
+                                            {copied ? <CheckCircle2 className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
+                                        </button>
+                                    </div>
+                                    <p className="text-[10px] font-bold text-primary/40 leading-tight italic">Share this code to invite team members to your company.</p>
+                                </div>
+                            </div>
 
-                                        {/* Board Role Badge */}
-                                        <div className="flex items-center gap-2">
-                                            {isEditingRole ? (
-                                                <select
-                                                    value={boardRole}
-                                                    onChange={(e) => handleBoardRoleChange(member.id, e.target.value)}
-                                                    onBlur={() => setEditingMemberId(null)}
-                                                    autoFocus
-                                                    className="text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-foreground outline-none cursor-pointer"
-                                                >
-                                                    {Object.entries(BOARD_ROLES).map(([key, label]) => (
-                                                        <option key={key} value={key} className="bg-background text-foreground">{label}</option>
-                                                    ))}
-                                                </select>
-                                            ) : (
-                                                <span
-                                                    className={`text-[10px] uppercase font-black tracking-widest px-3 py-1 rounded-full ${roleColor} ${canEditRoles ? 'cursor-pointer hover:ring-1 hover:ring-white/20' : ''} transition-all flex items-center gap-1.5`}
-                                                    onClick={() => canEditRoles && setEditingMemberId(member.id)}
-                                                >
-                                                    {roleLabel}
-                                                    {canEditRoles && <ChevronDown className="w-2.5 h-2.5" />}
-                                                </span>
-                                            )}
-                                        </div>
+                            <div className="p-8 rounded-[40px] bg-white/[0.01] border border-white/5 space-y-6">
+                                <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-foreground/30 font-bold">
+                                    <Settings className="w-3 h-3" />
+                                    <span>Company Settings</span>
+                                </div>
+                                <div className="space-y-3">
+                                    <button 
+                                        onClick={handleDeleteCompany}
+                                        disabled={userProfile?.role !== 'ceo'}
+                                        className="w-full py-4 px-6 rounded-2xl bg-red-500/5 border border-red-500/10 text-[10px] font-black uppercase tracking-widest text-red-500/40 hover:text-red-500 hover:bg-red-500/10 transition-all text-left disabled:opacity-30 disabled:cursor-not-allowed"
+                                    >
+                                        Delete Company
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
 
-                                        {/* Display Name (Meeting Identity) */}
-                                        <div className="flex items-center gap-2">
-                                            {isEditingName ? (
-                                                <div className="flex items-center gap-1.5 w-full">
-                                                    <input
-                                                        type="text"
-                                                        value={displayNameInput}
-                                                        onChange={(e) => setDisplayNameInput(e.target.value)}
-                                                        placeholder="e.g. Jane Smith"
-                                                        autoFocus
-                                                        className="flex-1 text-[11px] px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-foreground outline-none focus:border-primary"
-                                                    />
-                                                    <button onClick={() => handleDisplayNameSave(member.id)} className="p-1 rounded-lg bg-primary/20 text-primary hover:bg-primary/30 transition-all">
-                                                        <Check className="w-3 h-3" />
-                                                    </button>
-                                                    <button onClick={() => setEditingDisplayName(null)} className="p-1 rounded-lg bg-white/5 text-foreground/40 hover:text-foreground transition-all">
-                                                        <X className="w-3 h-3" />
-                                                    </button>
-                                                </div>
-                                            ) : (
-                                                <div className="flex items-center gap-1.5">
-                                                    <span className="text-[10px] text-foreground/30 italic">
-                                                        {member.display_name ? `Meeting ID: ${member.display_name}` : 'No meeting display name set'}
-                                                    </span>
-                                                    {(canEditRoles || isOwnCard) && (
-                                                        <button
-                                                            onClick={() => { setEditingDisplayName(member.id); setDisplayNameInput(member.display_name || ''); }}
-                                                            className="p-0.5 rounded text-foreground/20 hover:text-primary transition-all"
-                                                        >
-                                                            <Pencil className="w-2.5 h-2.5" />
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            )}
+                        <div className="lg:col-span-3 space-y-8">
+                            {/* Invite Members Section */}
+                            <div className="p-10 rounded-[48px] bg-white/[0.01] border border-white/5 space-y-10 group hover:bg-white/[0.02] transition-all">
+                                <div className="flex items-center justify-between">
+                                    <div className="space-y-2">
+                                        <div className="flex items-center gap-2 text-primary text-[10px] font-black uppercase tracking-widest italic">
+                                            <Mail className="w-3 h-3" />
+                                            <span>Invitation System</span>
                                         </div>
-
-                                        <p className="text-[10px] text-foreground/20 font-medium italic">{member.email}</p>
-                                        {isOwnCard && (
-                                            <div className="text-[9px] italic text-primary font-black uppercase tracking-widest">Your Executive Identity</div>
-                                        )}
+                                        <h3 className="text-4xl font-serif">Invite Member</h3>
+                                        <p className="text-foreground/30 text-xs italic font-medium">Bypass join codes by sending a direct invite link.</p>
                                     </div>
                                 </div>
-                            );
-                        })}
+
+                                <form onSubmit={handleInviteMember} className="space-y-6">
+                                    {!canInvite ? (
+                                        <div className="p-6 rounded-3xl bg-white/[0.02] border border-dashed border-white/10 flex items-center justify-center text-[10px] font-black uppercase tracking-widest text-foreground/20 italic">
+                                            Permission Denied: Only CEOs and Managers can send invites.
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-2 group">
+                                            <label className="text-[10px] font-black uppercase tracking-widest text-primary ml-1 italic font-bold">Member Email Address</label>
+                                            <div className="flex flex-col md:flex-row gap-4">
+                                                <input
+                                                    type="email"
+                                                    required
+                                                    placeholder="EX: director@company.com"
+                                                    value={inviteEmail}
+                                                    onChange={(e) => setInviteEmail(e.target.value)}
+                                                    className="flex-1 h-16 px-6 rounded-2xl bg-white/[0.02] border border-white/5 focus:border-primary focus:bg-white/[0.04] text-foreground outline-none transition-all"
+                                                />
+                                                <button 
+                                                    disabled={isInviting}
+                                                    className="h-16 px-10 bg-primary hover:bg-primary/90 text-background rounded-2xl font-black text-xs uppercase tracking-[0.2em] flex items-center justify-center gap-3 transition-all active:scale-95 disabled:opacity-50 min-w-[200px]"
+                                                >
+                                                    {isInviting ? <RotateCcw className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
+                                                    <span>Invite</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {activeInviteLink && (
+                                        <div className="p-6 rounded-3xl bg-primary/5 border border-primary/20 space-y-4 animate-in slide-in-from-top-2">
+                                            <p className="text-[10px] font-black uppercase tracking-widest text-primary italic font-bold">Direct Invitation Link:</p>
+                                            <div className="flex items-center gap-4 bg-black/40 p-4 rounded-xl border border-white/5 group/link">
+                                                <code className="flex-1 text-[10px] text-foreground/60 truncate">{activeInviteLink}</code>
+                                                <button 
+                                                    type="button"
+                                                    onClick={() => {
+                                                        navigator.clipboard.writeText(activeInviteLink);
+                                                        alert('Link copied to clipboard!');
+                                                    }}
+                                                    className="p-2 rounded-lg hover:bg-white/10 text-primary transition-all active:scale-90"
+                                                >
+                                                    <Copy className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                            <p className="text-[8px] text-foreground/20 italic font-bold uppercase tracking-widest">Share this link with them. They will join {organization?.name} instantly on signup.</p>
+                                        </div>
+                                    )}
+                                </form>
+                            </div>
+
+                            {/* Pending Join Requests (Moderation) */}
+                            {joinRequests.length > 0 && (
+                                <div className="space-y-6 p-10 rounded-[48px] bg-primary/5 border border-primary/20 animate-in fade-in slide-in-from-top-4">
+                                    <div className="flex items-center gap-3">
+                                        <ShieldAlert className="w-6 h-6 text-primary" />
+                                        <div>
+                                            <h3 className="text-xl font-serif text-primary">Pending Approvals</h3>
+                                            <p className="text-[10px] text-primary/40 font-black uppercase tracking-widest italic">New members waiting to enter {organization.name}</p>
+                                        </div>
+                                    </div>
+                                    <div className="space-y-4">
+                                        {joinRequests.map((req: any) => (
+                                            <div key={req.id} className="p-6 rounded-3xl bg-background border border-primary/20 flex items-center justify-between group">
+                                                <div className="flex items-center gap-4">
+                                                    <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
+                                                        <UserCircle className="w-6 h-6" />
+                                                    </div>
+                                                    <div>
+                                                        <div className="font-bold text-foreground/90 font-serif">{req.profiles?.display_name || req.profiles?.email.split('@')[0]}</div>
+                                                        <div className="text-[10px] text-foreground/20 italic font-bold tracking-widest uppercase">{req.profiles?.email}</div>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <button 
+                                                        onClick={() => handleModerateRequest(req.id, 'reject')}
+                                                        className="px-6 py-3 rounded-xl hover:bg-red-500/10 text-foreground/20 hover:text-red-500 text-[10px] font-black uppercase tracking-widest transition-all"
+                                                    >
+                                                        Decline
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => handleModerateRequest(req.id, 'approve')}
+                                                        className="px-8 py-3 bg-primary text-background rounded-xl text-[10px] font-black uppercase tracking-widest hover:scale-105 transition-all active:scale-95"
+                                                    >
+                                                        Approve Access
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="flex items-center justify-between pt-8">
+                                <h2 className="text-3xl font-serif">Member List</h2>
+                                <div className="px-4 py-2 rounded-full border border-white/5 text-[10px] font-black uppercase tracking-widest text-foreground/40 flex items-center gap-2">
+                                    <Users className="w-4 h-4" />
+                                    {members.length} Team Members
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {members.map((member) => {
+                                    const boardRole = member.board_role || 'director';
+                                    const roleLabel = BOARD_ROLES[boardRole] || boardRole;
+                                    const roleColor = BOARD_ROLE_COLORS[boardRole] || 'bg-white/5 text-foreground/40';
+                                    const isEditingRole = editingMemberId === member.id;
+                                    const isOwnCard = member.id === (userProfile?.id || "");
+
+                                    return (
+                                        <div key={member.id} className="p-8 rounded-[48px] border border-white/5 bg-white/[0.01] hover:bg-white/[0.03] transition-all group flex flex-col gap-6 relative overflow-hidden">
+                                            <div className="flex items-start justify-between">
+                                                <div className="flex items-center gap-4">
+                                                    <div className="w-14 h-14 rounded-[24px] bg-primary/5 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
+                                                        <UserCircle className="w-8 h-8" />
+                                                    </div>
+                                                    <div>
+                                                        <h3 className="font-bold text-xl text-foreground/90">{member.username || member.display_name || member.email.split('@')[0]}</h3>
+                                                        <div className="text-[10px] text-foreground/20 italic font-bold tracking-widest uppercase">{member.email}</div>
+                                                    </div>
+                                                </div>
+                                                {canManageRoles && !isOwnCard && (
+                                                    <button onClick={() => handleRevokeSeat(member.id)} className="p-3 rounded-xl hover:bg-red-500/10 text-foreground/10 hover:text-red-500 transition-all group/btn">
+                                                        <Trash2 className="w-5 h-5" />
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            <div className="space-y-4 pt-4 border-t border-white/5 flex flex-col gap-3">
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-2">
+                                                        {editingRoleMemberId === member.id ? (
+                                                            <select
+                                                                value={member.role}
+                                                                onChange={(e) => handleOrgRoleChange(member.id, e.target.value)}
+                                                                onBlur={() => setEditingRoleMemberId(null)}
+                                                                autoFocus
+                                                                className="text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-2xl bg-primary/20 border border-primary/20 text-primary outline-none cursor-pointer"
+                                                            >
+                                                                {Object.entries(APP_ROLES).map(([key, info]) => (
+                                                                    <option key={key} value={key} className="bg-[#050505] text-foreground">{info.label}</option>
+                                                                ))}
+                                                            </select>
+                                                        ) : (
+                                                            <span 
+                                                                onClick={() => canManageRoles && setEditingRoleMemberId(member.id)}
+                                                                className={`text-[9px] uppercase font-black tracking-widest px-3 py-1 rounded-full transition-all ${APP_ROLES[member.role as keyof typeof APP_ROLES]?.color || 'bg-surface-high text-foreground/20'} ${canManageRoles ? 'cursor-pointer hover:ring-2 hover:ring-white/20' : ''} flex items-center gap-1.5`}
+                                                            >
+                                                                {APP_ROLES[member.role as keyof typeof APP_ROLES]?.label || member.role}
+                                                                {canManageRoles && <ChevronDown className="w-2.5 h-2.5" />}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            {isOwnCard && <div className="absolute top-4 right-4 text-[8px] font-black uppercase tracking-widest text-primary italic">You</div>}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
                     </div>
                 </div>
-            </div>
+            )}
+
+            {activeTab === 'scheduler' && (
+                <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                    <ScheduleMeetingModal
+                        isOpen={isSchedulingModalOpen}
+                        onClose={() => setIsSchedulingModalOpen(false)}
+                        userId={userProfile?.id}
+                        organizationId={organization?.id}
+                        timezone={timezone}
+                        onSuccess={(meeting) => {
+                            setScheduledMeetings(prev => [meeting, ...prev]);
+                            alert("Meeting scheduled successfully! It will appear on your Google Calendar shortly.");
+                        }}
+                    />
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                        <div className="space-y-2">
+                            <h2 className="text-4xl font-serif">Calendar</h2>
+                            <p className="text-foreground/40 text-sm font-medium italic italic">Schedule your upcoming meetings.</p>
+                        </div>
+                         {canSchedule && (
+                             <button 
+                                 onClick={() => setIsSchedulingModalOpen(true)}
+                                 className="px-8 py-4 bg-primary text-background rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center gap-3 active:scale-95 transition-all"
+                             >
+                                 <Plus className="w-5 h-5" />
+                                 New Meeting
+                             </button>
+                         )}
+
+
+                    </div>
+
+                    <div className="relative p-1 bg-surface-low border border-border rounded-[48px] overflow-hidden group">
+                         <div className="absolute inset-x-0 top-0 h-1 bg-primary" />
+                         <div className="w-full aspect-video bg-black/40 rounded-[44px] flex items-center justify-center relative overflow-hidden">
+                              {!userProfile?.google_connected ? (
+                                 <>
+                                     <div className="absolute inset-0 flex flex-col items-center justify-center space-y-6 z-10 bg-black/60 backdrop-blur-sm">
+                                         <Calendar className="w-20 h-20 text-primary/20 animate-bounce" />
+                                         <div className="text-center space-y-2">
+                                             <h3 className="text-2xl font-serif italic text-foreground/60">Meeting Calendar</h3>
+                                             <p className="text-foreground/20 text-xs font-bold uppercase tracking-widest">Syncing your calendar for {organization.name}</p>
+                                         </div>
+                                          <div className="flex items-center gap-4">
+                                             <button 
+                                                 onClick={async () => {
+                                                     const { data } = await axios.get(`${BACKEND_URL}/api/auth/google/url`);
+                                                     if (data?.url) window.location.href = data.url;
+                                                 }}
+                                                 className="px-10 py-5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-3xl text-[10px] font-black uppercase tracking-widest text-primary transition-all"
+                                             >
+                                                 Connect Google Calendar
+                                             </button>
+                                         </div>
+                                     </div>
+                                     {/* Mock Grid for Aesthetic Background - only when disconnected */}
+                                     <div className="grid grid-cols-7 w-full h-full opacity-5">
+                                         {Array.from({ length: 35 }).map((_, i) => (
+                                             <div key={i} className="border border-white/20 p-8" />
+                                         ))}
+                                     </div>
+                                 </>
+                              ) : (
+                                  <div className="absolute inset-0 bg-white">
+                                      <iframe 
+                                          src={`https://calendar.google.com/calendar/embed?src=${encodeURIComponent(userProfile.email)}&ctz=${encodeURIComponent(timezone)}&mode=WEEK`}
+                                          className="w-full h-full border-0"
+                                      />
+
+                                      {/* Floating Disconnect for owners */}
+                                      <button 
+                                          onClick={async () => {
+                                              if (confirm("Disconnect Google Calendar?")) {
+                                                  await axios.post(`${BACKEND_URL}/api/auth/google/disconnect`, { userId: userProfile.id });
+                                                  window.location.reload();
+                                              }
+                                          }}
+                                          className="absolute bottom-6 right-6 px-6 py-3 bg-red-500 text-white rounded-2xl text-[8px] font-black uppercase tracking-widest shadow-xl hover:bg-red-600 transition-all active:scale-95"
+                                      >
+                                          Disconnect Account
+                                      </button>
+                                  </div>
+                              )}
+                         </div>
+                    </div>
+
+                     <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                        {scheduledMeetings.length > 0 ? scheduledMeetings.map((m, i) => (
+                            <div key={i} className="p-8 rounded-[40px] bg-white/[0.01] border border-white/5 space-y-6 group hover:bg-white/[0.03] transition-all">
+                                <div className="flex items-center justify-between">
+                                    <div className="px-3 py-1 rounded-full bg-primary/20 text-[8px] font-black uppercase tracking-widest text-primary">Scheduled</div>
+                                    <div className="flex items-center gap-2">
+                                        <button 
+                                            onClick={() => handleDeleteScheduledMeeting(m.id)}
+                                            className="p-2 rounded-lg hover:bg-red-500/10 text-foreground/10 hover:text-red-500 transition-all"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                        <Calendar className="w-4 h-4 text-primary/20" />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <h4 className="text-xl font-bold font-serif mb-1">{m.title}</h4>
+                                    <div className="text-[10px] font-black uppercase tracking-widest text-primary/60">
+                                        {new Date(m.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                                    </div>
+
+                                    {/* Attendance Preview */}
+                                    {m.initial_attendees && m.initial_attendees.length > 0 && (
+                                        <div className="mt-4 flex flex-wrap gap-2">
+                                            <div className="flex items-center gap-1.5 w-full text-[8px] font-black uppercase tracking-widest text-foreground/20 mb-1">
+                                                <Users className="w-2 h-2" /> Invited
+                                            </div>
+                                            {m.initial_attendees.slice(0, 3).map((email: string, idx: number) => (
+                                                <div key={idx} className="px-2 py-1 rounded-lg bg-surface-high border border-border text-[8px] text-foreground/60 font-medium">
+                                                    {email.split('@')[0]}
+                                                </div>
+                                            ))}
+                                            {m.initial_attendees.length > 3 && (
+                                                <div className="px-2 py-1 rounded-lg bg-primary/10 text-[8px] text-primary font-bold">
+                                                    +{m.initial_attendees.length - 3}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {m.recording_url && m.recording_url.includes('meet.google.com') && (
+                                        <a href={m.recording_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 mt-4 text-[9px] font-black uppercase tracking-[0.2em] text-primary hover:underline">
+                                           <Video className="w-3 h-3" /> Join Meet
+                                        </a>
+                                    )}
+                                </div>
+                            </div>
+                        )) : (
+                            <div className="col-span-full py-20 text-center border border-dashed border-white/5 rounded-[40px]">
+                                <p className="text-foreground/20 text-[10px] font-black uppercase tracking-widest">No upcoming meetings scheduled via AI.</p>
+                            </div>
+                        )}
+                    </div>
+
+                </div>
+            )}
         </div>
     );
 }

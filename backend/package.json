@@ -19,8 +19,11 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.1",
     "express": "^5.2.1",
+    "google-auth-library": "^10.6.2",
+    "googleapis": "^171.4.0",
     "langsmith": "^0.5.16",
     "multer": "^2.1.1",
+    "nodemailer": "^8.0.5",
     "pdf-parse": "^1.1.1",
     "uuid": "^13.0.0"
   }
