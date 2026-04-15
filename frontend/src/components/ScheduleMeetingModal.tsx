@@ -140,7 +140,7 @@ export default function ScheduleMeetingModal({ isOpen, onClose, userId, organiza
                             <h2 className="text-3xl font-serif font-medium">Schedule Meeting</h2>
                             <p className="text-foreground/40 text-[10px] uppercase font-black tracking-widest italic">Create calendar event & Meet link</p>
                         </div>
-                        <button onClick={onClose} className="p-3 rounded-2xl hover:bg-white/5 text-foreground/20 hover:text-foreground transition-all">
+                        <button onClick={onClose} className="p-3 rounded-2xl hover:bg-surface-highest/20 text-foreground/20 hover:text-foreground transition-all">
                             <X className="w-6 h-6" />
                         </button>
                     </div>
@@ -161,7 +161,7 @@ export default function ScheduleMeetingModal({ isOpen, onClose, userId, organiza
                                     placeholder="EX: Quarterly Strategy Review"
                                     value={title}
                                     onChange={(e) => setTitle(e.target.value)}
-                                    className="w-full h-14 px-6 rounded-2xl bg-white/[0.02] border border-white/5 focus:border-primary focus:bg-white/[0.04] text-foreground outline-none transition-all"
+                                    className="w-full h-14 px-6 rounded-2xl bg-surface-low border border-border focus:border-primary focus:bg-white/[0.04] text-foreground outline-none transition-all"
                                 />
                             </div>
 
@@ -175,7 +175,7 @@ export default function ScheduleMeetingModal({ isOpen, onClose, userId, organiza
                                             required
                                             value={date}
                                             onChange={(e) => setDate(e.target.value)}
-                                            className="w-full h-14 pl-14 pr-6 rounded-2xl bg-white/[0.02] border border-white/5 focus:border-primary focus:bg-white/[0.04] text-foreground outline-none transition-all"
+                                            className="w-full h-14 pl-14 pr-6 rounded-2xl bg-surface-low border border-border focus:border-primary focus:bg-white/[0.04] text-foreground outline-none transition-all"
                                         />
                                     </div>
                                 </div>
@@ -188,7 +188,7 @@ export default function ScheduleMeetingModal({ isOpen, onClose, userId, organiza
                                             required
                                             value={time}
                                             onChange={(e) => setTime(e.target.value)}
-                                            className="w-full h-14 pl-14 pr-6 rounded-2xl bg-white/[0.02] border border-white/5 focus:border-primary focus:bg-white/[0.04] text-foreground outline-none transition-all"
+                                            className="w-full h-14 pl-14 pr-6 rounded-2xl bg-surface-low border border-border focus:border-primary focus:bg-white/[0.04] text-foreground outline-none transition-all"
                                         />
                                     </div>
                                 </div>
@@ -199,7 +199,7 @@ export default function ScheduleMeetingModal({ isOpen, onClose, userId, organiza
                                 <select
                                     value={duration}
                                     onChange={(e) => setDuration(e.target.value)}
-                                    className="w-full h-14 px-6 rounded-2xl bg-white/[0.02] border border-white/5 focus:border-primary focus:bg-white/[0.04] text-foreground outline-none transition-all appearance-none cursor-pointer"
+                                    className="w-full h-14 px-6 rounded-2xl bg-surface-low border border-border focus:border-primary focus:bg-white/[0.04] text-foreground outline-none transition-all appearance-none cursor-pointer"
                                 >
                                     <option value="15" className="bg-black">15 Minutes</option>
                                     <option value="30" className="bg-black">30 Minutes</option>
@@ -220,14 +220,14 @@ export default function ScheduleMeetingModal({ isOpen, onClose, userId, organiza
                                         onChange={handleAttendeesChange}
                                         onKeyDown={handleKeyDown}
                                         onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                                        className="w-full h-14 pl-14 pr-6 rounded-2xl bg-white/[0.02] border border-white/5 focus:border-primary focus:bg-white/[0.04] text-foreground outline-none transition-all"
+                                        className="w-full h-14 pl-14 pr-6 rounded-2xl bg-surface-low border border-border focus:border-primary focus:bg-white/[0.04] text-foreground outline-none transition-all"
                                     />
                                 </div>
 
                                 {showSuggestions && (
                                     <div 
                                         ref={suggestionRef}
-                                        className="absolute z-[120] left-0 right-0 mt-2 bg-neutral-900 border border-white/10 rounded-2xl overflow-hidden shadow-2xl animate-in fade-in slide-in-from-top-2 duration-200"
+                                        className="absolute z-[120] left-0 right-0 mt-2 bg-neutral-900 border border-border rounded-2xl overflow-hidden shadow-2xl animate-in fade-in slide-in-from-top-2 duration-200"
                                     >
                                         <div className="max-h-48 overflow-y-auto">
                                             {suggestions.map((profile, idx) => (
@@ -237,7 +237,7 @@ export default function ScheduleMeetingModal({ isOpen, onClose, userId, organiza
                                                     onClick={() => selectSuggestion(profile)}
                                                     onMouseEnter={() => setActiveSuggestionIndex(idx)}
                                                     className={`w-full flex items-center justify-between px-6 py-4 text-left transition-colors ${
-                                                        idx === activeSuggestionIndex ? 'bg-primary text-background' : 'hover:bg-white/5'
+                                                        idx === activeSuggestionIndex ? 'bg-primary text-background' : 'hover:bg-surface-highest/20'
                                                     }`}
                                                 >
                                                     <div className="flex flex-col">

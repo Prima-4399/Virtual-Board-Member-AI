@@ -63,18 +63,43 @@ export default function LoginPage() {
     };
 
     return (
-        <div className="flex flex-col items-center justify-center min-h-[calc(100vh-80px)] px-6 relative">
-            <div className="max-w-md w-full space-y-10 py-12">
-                {/* Branding */}
-                <div className="text-center space-y-6">
+        <div className="flex flex-col lg:flex-row items-center justify-center min-h-[calc(100vh-80px)] px-6 py-12 gap-8 relative max-w-7xl mx-auto">
+            
+            {/* Visual Branding Pane */}
+            <div className="hidden lg:flex flex-col justify-between w-full lg:w-1/2 h-[700px] p-12 rounded-[48px] bg-surface-low border border-border relative overflow-hidden group">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-primary/10 rounded-full blur-3xl -mr-32 -mt-32 transition-transform group-hover:scale-150 duration-1000" />
+                
+                <div className="relative z-10 space-y-6">
+                    <div className="w-16 h-16 rounded-[24px] bg-primary/10 border border-primary/20 flex flex-col items-center justify-center text-primary shadow-sm">
+                        <Lock className="w-8 h-8" />
+                    </div>
+                    <h1 className="text-5xl font-serif font-medium text-foreground tracking-tight leading-snug">Secure Board Access</h1>
+                    <p className="text-foreground/60 text-lg font-medium max-w-sm">Log in to view executive summaries, upcoming meetings, and AI-driven board intelligence.</p>
+                </div>
+                
+                <div className="relative z-10 grid grid-cols-2 gap-4">
+                    <div className="p-6 rounded-[32px] bg-background/50 border border-border backdrop-blur-sm">
+                        <ShieldAlert className="w-6 h-6 text-primary mb-4" />
+                        <h4 className="text-sm font-bold text-foreground">Encrypted Vault</h4>
+                        <p className="text-xs text-foreground/40 mt-1 font-medium">Bank-level security for sensitive documents.</p>
+                    </div>
+                    <div className="p-6 rounded-[32px] bg-background/50 border border-border backdrop-blur-sm">
+                        <Lock className="w-6 h-6 text-primary mb-4" />
+                        <h4 className="text-sm font-bold text-foreground">Role Based</h4>
+                        <p className="text-xs text-foreground/40 mt-1 font-medium">Granular access control constraints.</p>
+                    </div>
+                </div>
+            </div>
+
+            {/* Form Pane */}
+            <div className="w-full lg:w-1/2 max-w-md space-y-10 py-12 px-2">
+                <div className="lg:hidden text-center space-y-6">
                     <div className="w-16 h-16 rounded-xl bg-surface-low border border-border flex items-center justify-center text-primary mx-auto mb-8 shadow-lg shadow-primary/5">
                         <Lock className="w-8 h-8" />
                     </div>
                     <h1 className="text-4xl font-serif font-medium text-foreground tracking-tight">Login</h1>
                     <p className="text-foreground/40 text-sm font-medium italic font-serif">Access your company dashboard</p>
                 </div>
-
-                {/* Form */}
                 <div className="space-y-6">
                     <form onSubmit={handleLogin} className="space-y-6">
                         {error && (

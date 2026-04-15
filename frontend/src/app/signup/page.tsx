@@ -147,15 +147,42 @@ export default function SignupPage() {
     }
 
     return (
-        <div className="flex flex-col items-center justify-center min-h-[calc(100vh-80px)] px-6 relative">
-            <div className="max-w-md w-full space-y-10 py-12">
-                {/* Branding */}
-                <div className="text-center space-y-6">
+        <div className="flex flex-col lg:flex-row items-center justify-center min-h-[calc(100vh-80px)] px-6 py-12 gap-8 relative max-w-7xl mx-auto">
+            
+            {/* Visual Branding Pane */}
+            <div className="hidden lg:flex flex-col justify-between w-full lg:w-1/2 min-h-[700px] p-12 rounded-[48px] bg-surface-low border border-border relative overflow-hidden group">
+                <div className="absolute bottom-0 left-0 w-64 h-64 bg-primary/10 rounded-full blur-3xl -ml-32 -mb-32 transition-transform group-hover:scale-150 duration-1000" />
+                
+                <div className="relative z-10 space-y-6">
+                    <div className="w-16 h-16 rounded-[24px] bg-primary/10 border border-primary/20 flex flex-col items-center justify-center text-primary shadow-sm">
+                        <UserPlus className="w-8 h-8" />
+                    </div>
+                    <h1 className="text-5xl font-serif font-medium text-foreground tracking-tight leading-snug">Boardroom Registration</h1>
+                    <p className="text-foreground/60 text-lg font-medium max-w-sm">Secure your seat in the executive intelligence suite. Collaborate, decide, and lead.</p>
+                </div>
+                
+                <div className="relative z-10 grid grid-cols-2 gap-4">
+                    <div className="p-6 rounded-[32px] bg-background/50 border border-border backdrop-blur-sm">
+                        <CheckCircle2 className="w-6 h-6 text-primary mb-4" />
+                        <h4 className="text-sm font-bold text-foreground">AI Intelligence</h4>
+                        <p className="text-xs text-foreground/40 mt-1 font-medium">Automatic meeting parsing and minute generation.</p>
+                    </div>
+                    <div className="p-6 rounded-[32px] bg-background/50 border border-border backdrop-blur-sm">
+                        <ShieldCheck className="w-6 h-6 text-primary mb-4" />
+                        <h4 className="text-sm font-bold text-foreground">Governance</h4>
+                        <p className="text-xs text-foreground/40 mt-1 font-medium">Centralized corporate memory and actions.</p>
+                    </div>
+                </div>
+            </div>
+
+            {/* Form Pane */}
+            <div className="w-full lg:w-1/2 max-w-md space-y-10 py-12 px-2">
+                <div className="lg:hidden text-center space-y-6">
                     <div className="w-16 h-16 rounded-xl bg-surface-low border border-border flex items-center justify-center text-primary mx-auto mb-8 shadow-lg shadow-primary/5">
                         <UserPlus className="w-8 h-8" />
                     </div>
-                    <h1 className="text-4xl font-serif font-medium text-foreground tracking-tight">Boardroom Registration</h1>
-                    <p className="text-foreground/40 text-sm font-medium italic font-serif">Secure your seat in the executive intelligence suite</p>
+                    <h1 className="text-4xl font-serif font-medium text-foreground tracking-tight">Registration</h1>
+                    <p className="text-foreground/40 text-sm font-medium italic font-serif">Secure your seat in the suite</p>
                 </div>
 
                 {/* Form Mode Toggle - hide if invited */}

@@ -127,7 +127,7 @@ export default function MeetingHistory() {
         <RoleGuard deniedRoles={['intern']}>
             <div className="max-w-6xl mx-auto px-6 py-12 space-y-12">
                 {/* Header */}
-                <header className="flex flex-col md:flex-row md:items-end justify-between gap-8 pb-12 border-b border-white/5">
+                <header className="flex flex-col md:flex-row md:items-end justify-between gap-8 pb-12 border-b border-border">
                     <div className="space-y-4">
                         <div className="flex items-center gap-3 text-primary uppercase font-black tracking-[0.3em] text-[10px]">
                             <Video className="w-4 h-4" />
@@ -178,7 +178,7 @@ export default function MeetingHistory() {
                                         </button>
                                         <button
                                             onClick={closeMeeting}
-                                            className="p-3 rounded-xl bg-white/5 hover:bg-white/10 text-foreground/40 hover:text-foreground transition-all"
+                                            className="p-3 rounded-xl bg-surface-highest/20 hover:bg-surface-highest/40 text-foreground/40 hover:text-foreground transition-all"
                                         >
                                             <X className="w-5 h-5" />
                                         </button>
@@ -193,7 +193,7 @@ export default function MeetingHistory() {
                                         {selectedMeeting.attendees_summary.map((a: any, idx: number) => (
                                             <span
                                                 key={idx}
-                                                className={`text-[8px] uppercase font-black tracking-widest px-2 py-0.5 rounded-full ${a.board_role ? (BOARD_ROLE_COLORS[a.board_role] || 'bg-white/5 text-foreground/40') : 'bg-white/5 text-foreground/30'}`}
+                                                className={`text-[8px] uppercase font-black tracking-widest px-2 py-0.5 rounded-full ${a.board_role ? (BOARD_ROLE_COLORS[a.board_role] || 'bg-surface-highest/20 text-foreground/40') : 'bg-surface-highest/20 text-foreground/30'}`}
                                             >
                                                 {a.name} {a.board_role ? `· ${a.board_role}` : ''}
                                             </span>
@@ -202,7 +202,7 @@ export default function MeetingHistory() {
                                 )}
 
                                 {/* Tabs */}
-                                <div className="flex gap-2 bg-white/[0.02] p-1 rounded-xl">
+                                <div className="flex gap-2 bg-surface-low p-1 rounded-xl">
                                     <button
                                         onClick={() => setModalTab('transcript')}
                                         className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${modalTab === 'transcript' ? 'bg-background text-primary shadow-sm' : 'text-foreground/30 hover:text-foreground/60'}`}
@@ -225,14 +225,14 @@ export default function MeetingHistory() {
                             </div>
 
                             {/* Tab Content */}
-                            <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-white/[0.01]">
+                            <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-surface-low">
                                 {modalTab === 'transcript' ? (
                                     selectedTranscript && selectedTranscript.length > 0 ? (
                                         <div className="space-y-6">
                                             {selectedTranscript.map((entry: any, i: number) => {
                                                 const speakerName = entry.participant?.name || 'Unknown Participant';
                                                 const speakerRole = selectedMeetingAttendees[speakerName];
-                                                const roleColor = speakerRole ? (BOARD_ROLE_COLORS[speakerRole] || 'bg-white/5 text-foreground/40') : '';
+                                                const roleColor = speakerRole ? (BOARD_ROLE_COLORS[speakerRole] || 'bg-surface-highest/20 text-foreground/40') : '';
                                                 return (
                                                     <div key={i} className="space-y-2 border-l-2 border-primary/20 pl-6 py-2">
                                                         <div className="flex items-center gap-3">
@@ -277,7 +277,7 @@ export default function MeetingHistory() {
                                     selectedMeeting.actions && selectedMeeting.actions.length > 0 ? (
                                         <div className="space-y-4">
                                             {(typeof selectedMeeting.actions === 'string' ? JSON.parse(selectedMeeting.actions) : selectedMeeting.actions).map((action: any, idx: number) => (
-                                                <div key={idx} className={`p-6 rounded-2xl border transition-all flex items-start justify-between ${action.status === 'done' ? 'bg-primary/5 border-primary/20 opacity-60' : 'bg-white/[0.02] border-white/5'}`}>
+                                                <div key={idx} className={`p-6 rounded-2xl border transition-all flex items-start justify-between ${action.status === 'done' ? 'bg-primary/5 border-primary/20 opacity-60' : 'bg-surface-low border-border'}`}>
                                                     <div className="flex items-start gap-4">
                                                         <div className={`mt-1 w-6 h-6 rounded-lg border-2 flex items-center justify-center ${action.status === 'done' ? 'bg-primary border-primary text-background' : 'border-foreground/20'}`}>
                                                             {action.status === 'done' && <CheckCircle className="w-4 h-4" />}
@@ -292,12 +292,12 @@ export default function MeetingHistory() {
                                                                     {action.owner || 'Unassigned'}
                                                                 </div>
                                                                 {action.owner_role && action.owner_role !== 'guest' && (
-                                                                    <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest ${BOARD_ROLE_KEY_COLORS[action.owner_role] || 'bg-white/5 text-foreground/40'}`}>
+                                                                    <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest ${BOARD_ROLE_KEY_COLORS[action.owner_role] || 'bg-surface-highest/20 text-foreground/40'}`}>
                                                                         {action.owner_role.replace(/_/g, ' ')}
                                                                     </div>
                                                                 )}
                                                                 {action.deadline && action.deadline !== 'N/A' && (
-                                                                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-[9px] font-black uppercase tracking-widest text-foreground/40">
+                                                                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-highest/20 border border-border text-[9px] font-black uppercase tracking-widest text-foreground/40">
                                                                         <Clock className="w-2.5 h-2.5" />
                                                                         {action.deadline}
                                                                     </div>
@@ -323,8 +323,8 @@ export default function MeetingHistory() {
 
                 {/* Empty State */}
                 {meetings.length === 0 ? (
-                    <div className="py-24 rounded-[48px] bg-white/[0.01] border border-dashed border-white/10 flex flex-col items-center justify-center space-y-6">
-                        <div className="w-16 h-16 rounded-[24px] bg-white/[0.02] flex items-center justify-center text-foreground/20">
+                    <div className="py-24 rounded-[48px] bg-surface-low border border-dashed border-border flex flex-col items-center justify-center space-y-6">
+                        <div className="w-16 h-16 rounded-[24px] bg-surface-low flex items-center justify-center text-foreground/20">
                             <Video className="w-8 h-8" />
                         </div>
                         <div className="text-center">
@@ -362,7 +362,7 @@ export default function MeetingHistory() {
                                                 {meeting.attendees_summary.map((a: any, idx: number) => (
                                                     <span
                                                         key={idx}
-                                                        className={`text-[8px] uppercase font-black tracking-widest px-2 py-0.5 rounded-full ${a.board_role ? (BOARD_ROLE_COLORS[a.board_role] || 'bg-white/5 text-foreground/40') : 'bg-white/5 text-foreground/30'}`}
+                                                        className={`text-[8px] uppercase font-black tracking-widest px-2 py-0.5 rounded-full ${a.board_role ? (BOARD_ROLE_COLORS[a.board_role] || 'bg-surface-highest/20 text-foreground/40') : 'bg-surface-highest/20 text-foreground/30'}`}
                                                         title={a.board_role || 'Guest'}
                                                     >
                                                         {a.name}
@@ -378,7 +378,7 @@ export default function MeetingHistory() {
                                         <a
                                             href={meeting.recording_url}
                                             target="_blank"
-                                            className="h-12 px-6 rounded-xl bg-white/5 hover:bg-white/10 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-foreground/60 transition-all active:scale-95 border border-white/5"
+                                            className="h-12 px-6 rounded-xl bg-surface-highest/20 hover:bg-surface-highest/40 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-foreground/60 transition-all active:scale-95 border border-border"
                                         >
                                             <Video className="w-4 h-4" />
                                             <span>Playback</span>

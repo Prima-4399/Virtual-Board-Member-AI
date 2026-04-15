@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { createClient } from '@/utils/supabase';
-import { Plus, Users, Calendar, Clock, ChevronRight, FileText, Search, Settings, Building2, UserCircle, Globe, Mail, Shield, Zap, X, Terminal, Database, Cpu, PieChart, Layout, Play, Filter, Download, ExternalLink, RefreshCw, Copy, CheckCircle2, RotateCcw, Briefcase, LayoutDashboard, ShieldAlert, ChevronDown, Pencil, Check, TrendingUp, Target, BookOpen, Trash2, Activity, Video, Trash } from 'lucide-react';
+import { Plus, Users, Calendar, Clock, ChevronRight, FileText, Search, Settings, Building2, UserCircle, Globe, Mail, Shield, Zap, X, Terminal, Database, Cpu, PieChart, Layout, Play, Filter, Download, ExternalLink, RefreshCw, Copy, CheckCircle2, RotateCcw, Briefcase, LayoutDashboard, ShieldAlert, ChevronDown, Pencil, Check, TrendingUp, Target, BookOpen, Trash2, Activity, Video, Trash, History } from 'lucide-react';
 import ScheduleMeetingModal from '@/components/ScheduleMeetingModal';
 import { useRouter } from 'next/navigation';
 import axios from 'axios';
+import { format } from 'date-fns';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
 
@@ -148,14 +149,24 @@ export default function OrganizationSuite() {
 
             // 4. Check for pending requests if no org
             if (!profile?.organization_id) {
-                const { data: reqStatus } = await axios.get(`${BACKEND_URL}/api/profiles/${session.user.id}/request-status`);
-                setPendingRequest(reqStatus);
+                try {
+                    const { data: reqStatus } = await axios.get(`${BACKEND_URL}/api/profiles/${session.user.id}/request-status`);
+                    setPendingRequest(reqStatus);
+                } catch (err) {
+                    console.log('No pending invite to fetch');
+                }
             } else if (profile?.role === 'ceo' || profile?.role === 'manager') {
                 // 5. If admin, check for pending requests to approve
-                const { data: requests } = await axios.get(`${BACKEND_URL}/api/organizations/${profile.organization_id}/join-requests`, {
-                    params: { adminId: profile.id }
-                });
-                setJoinRequests(requests || []);
+                try {
+                    const { data: requests } = await axios.get(`${BACKEND_URL}/api/organizations/${profile.organization_id}/join-requests`, {
+                        params: { adminId: profile.id }
+                    });
+                    setJoinRequests(requests || []);
+                } catch (err) {
+                    console.error('Failed to load join requests:', err);
+                    // Don't break the page - just log and continue
+                    setJoinRequests([]);
+                }
             }
 
         } catch (err: any) {
@@ -387,7 +398,7 @@ export default function OrganizationSuite() {
                     <p className="text-foreground/40 text-sm font-medium italic">You haven't joined a company yet.</p>
                 </div>
 
-                <div className="flex p-1 rounded-2xl bg-white/[0.02] border border-white/5">
+                <div className="flex p-1 rounded-2xl bg-surface-low border border-border">
                     <button
                         onClick={() => setIsJoining(true)}
                         className={`flex-1 py-3 rounded-xl text-[10px] uppercase font-black tracking-widest transition-all ${isJoining ? 'bg-primary text-background' : 'text-foreground/40 hover:text-foreground/60'}`}
@@ -436,7 +447,7 @@ export default function OrganizationSuite() {
                                         value={newJoinCode}
                                         maxLength={6}
                                         onChange={(e) => setNewJoinCode(e.target.value.toUpperCase())}
-                                        className="w-full h-14 px-6 rounded-2xl bg-white/[0.02] border border-white/5 focus:border-primary focus:bg-white/[0.04] text-foreground font-mono text-xl tracking-[0.5em] text-center outline-none transition-all placeholder:text-foreground/10"
+                                        className="w-full h-14 px-6 rounded-2xl bg-surface-low border border-border focus:border-primary focus:bg-white/[0.04] text-foreground font-mono text-xl tracking-[0.5em] text-center outline-none transition-all placeholder:text-foreground/10"
                                     />
                                 </div>
                             ) : (
@@ -448,7 +459,7 @@ export default function OrganizationSuite() {
                                         placeholder="EX: Cogniify"
                                         value={newOrgName}
                                         onChange={(e) => setNewOrgName(e.target.value)}
-                                        className="w-full h-14 px-6 rounded-2xl bg-white/[0.02] border border-white/5 focus:border-primary focus:bg-white/[0.04] text-foreground outline-none transition-all"
+                                        className="w-full h-14 px-6 rounded-2xl bg-surface-low border border-border focus:border-primary focus:bg-white/[0.04] text-foreground outline-none transition-all"
                                     />
                                 </div>
                             )}
@@ -468,7 +479,7 @@ export default function OrganizationSuite() {
     return (
         <div className="p-8 max-w-7xl mx-auto space-y-12 animate-in fade-in duration-1000">
             {/* Executive Branding Header */}
-            <header className="flex flex-col md:flex-row md:items-end justify-between gap-8 border-b border-white/5 pb-10">
+            <header className="flex flex-col md:flex-row md:items-end justify-between gap-8 border-b border-border pb-10">
                 <div className="space-y-4">
                     <div className="flex items-center gap-3 text-primary uppercase font-black tracking-[0.3em] text-[10px]">
                         <Shield className="w-4 h-4" />
@@ -478,45 +489,30 @@ export default function OrganizationSuite() {
                     <p className="text-foreground/40 font-medium font-black italic uppercase tracking-widest text-[10px]">Management Dashboard & Records</p>
                 </div>
 
-                {/* Tab Navigation */}
-                <div className="flex p-1 rounded-2xl bg-white/[0.02] border border-white/5">
-                    <button 
-                        onClick={() => setActiveTab('overview')}
-                        className={`px-8 py-3 rounded-xl text-[10px] uppercase font-black tracking-widest transition-all flex items-center gap-2 ${activeTab === 'overview' ? 'bg-primary text-background' : 'text-foreground/40 hover:text-foreground/60'}`}
-                    >
-                        <LayoutDashboard className="w-4 h-4" />
-                        Overview
-                    </button>
-                    <button 
-                        onClick={() => setActiveTab('governance')}
-                        className={`px-8 py-3 rounded-xl text-[10px] uppercase font-black tracking-widest transition-all flex items-center gap-2 ${activeTab === 'governance' ? 'bg-primary text-background' : 'text-foreground/40 hover:text-foreground/60'}`}
-                    >
-                        <ShieldAlert className="w-4 h-4" />
-                        Team
-                    </button>
-                    <button 
-                        onClick={() => setActiveTab('scheduler')}
-                        className={`px-8 py-3 rounded-xl text-[10px] uppercase font-black tracking-widest transition-all flex items-center gap-2 ${activeTab === 'scheduler' ? 'bg-primary text-background' : 'text-foreground/40 hover:text-foreground/60'}`}
-                    >
-                        <Calendar className="w-4 h-4" />
-                        Calendar
-                    </button>
-                </div>
             </header>
 
-            {activeTab === 'overview' && (
-                <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
-                    {/* Metrics Grid */}
+            <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                {/* Quick Stats - Live from DB */}
+                    <div className="space-y-3 mb-6">
+                        <div className="flex items-center gap-2 text-primary text-[10px] font-black uppercase tracking-widest italic">
+                            <Zap className="w-3 h-3" />
+                            <span>Quick Stats</span>
+                        </div>
+                        <h2 className="text-3xl font-serif">Key Metrics</h2>
+                        <p className="text-foreground/40 text-sm font-medium italic">Your organization at a glance</p>
+                    </div>
+
+                    {/* Metrics Grid - All 4 Required Items */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                         {[
-                            { label: 'Meeting Count', value: stats?.meetings_held || 0, sub: 'Meetings Held', icon: Activity, color: 'text-primary' },
-                            { label: 'Attendance', value: `${stats?.quorum || 0}%`, sub: 'Meeting Presence', icon: Target, color: 'text-foreground/40' },
-                            { label: 'File Count', value: stats?.total_chunks || 0, sub: 'Bits of Info', icon: BookOpen, color: 'text-foreground/40' },
-                            { label: 'Task Progress', value: `${stats?.completion_rate || 0}%`, sub: 'How much is done', icon: Zap, color: 'text-foreground/40' }
+                            { label: 'Total Meetings', value: stats?.meetings_held || 0, sub: 'Meetings recorded', icon: Activity, color: 'text-primary' },
+                            { label: 'Documents', value: stats?.total_documents || 0, sub: 'Files indexed', icon: FileText, color: 'text-foreground/40' },
+                            { label: 'Action Items', value: stats?.total_actions || 0, sub: 'Tasks tracked', icon: CheckCircle2, color: 'text-foreground/40' },
+                            { label: 'Team Members', value: stats?.active_members || 0, sub: 'Board members', icon: Users, color: 'text-foreground/40' }
                         ].map((stat, i) => (
-                            <div key={i} className="p-8 rounded-[40px] bg-white/[0.01] border border-white/5 space-y-4 hover:bg-white/[0.03] transition-all group">
+                            <div key={i} className="p-8 rounded-[40px] bg-surface-low border border-border space-y-4 hover:bg-surface-high transition-all group">
                                 <div className="flex items-center justify-between">
-                                    <div className={`p-3 rounded-2xl bg-white/5 ${stat.color} group-hover:scale-110 transition-transform`}>
+                                    <div className={`p-3 rounded-2xl bg-surface-highest/20 ${stat.color} group-hover:scale-110 transition-transform`}>
                                         <stat.icon className="w-5 h-5" />
                                     </div>
                                     <TrendingUp className="w-4 h-4 text-foreground/5" />
@@ -530,96 +526,149 @@ export default function OrganizationSuite() {
                         ))}
                     </div>
 
-                    {/* AI Insight Strip */}
-                    <div className="relative group">
-                        <div className="relative p-10 rounded-[32px] bg-surface-low border border-border flex flex-col md:flex-row items-center gap-10">
-                            <div className="w-20 h-20 rounded-[24px] bg-primary/5 flex items-center justify-center text-primary shrink-0 relative overflow-hidden">
-                                <Zap className="w-10 h-10 relative z-10 animate-pulse" />
-                                <div className="absolute inset-0 bg-primary/10 animate-ping" />
-                            </div>
-                            <div className="space-y-3">
-                                <div className="text-[10px] uppercase font-black tracking-widest text-primary flex items-center gap-2">
-                                    <Activity className="w-3 h-3" />
-                                    AI Summary
+
+                    {/* Recent Activity Feed */}
+                    <div className="space-y-6">
+                        <div className="flex items-center justify-between">
+                            <div className="space-y-2">
+                                <div className="flex items-center gap-2 text-primary text-[10px] font-black uppercase tracking-widest italic">
+                                    <History className="w-3 h-3" />
+                                    <span>Recent Activity</span>
                                 </div>
-                                <h3 className="text-2xl font-serif text-foreground/90 italic leading-snug">
-                                    {stats?.meetings_held > 0 
-                                      ? `The AI has learned from ${stats.total_chunks} bits of info. You have had ${stats.meetings_held} meetings so far.`
-                                      : "Set up your team by uploading company documents."}
-                                </h3>
-                                <p className="text-foreground/30 text-xs font-medium max-w-2xl">
-                                    The AI is looking at your meetings. About {stats?.completion_rate}% of your tasks are done.
-                                </p>
+                                <h3 className="text-2xl font-serif">Last Meetings</h3>
                             </div>
-                            <button onClick={() => router.push('/chat')} className="ml-auto px-8 py-4 bg-primary text-background rounded-2xl font-black text-[10px] uppercase tracking-widest hover:scale-105 transition-all active:scale-95 shrink-0">
-                                Consult Advisor
+                            <button onClick={() => router.push('/meetings')} className="text-[9px] font-black uppercase tracking-widest text-primary/60 hover:text-primary transition-colors flex items-center gap-1.5">
+                                View All <ChevronRight className="w-3 h-3" />
                             </button>
                         </div>
+                        
+                        {scheduledMeetings.length > 0 ? (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {scheduledMeetings.slice(0, 5).map((meeting: any, i: number) => (
+                                    <div key={i} className="p-6 rounded-[32px] bg-surface-low border border-border hover:bg-surface-high transition-all group cursor-pointer" onClick={() => router.push(`/meetings?meeting=${meeting.id}`)}>
+                                        <div className="flex items-center justify-between mb-4">
+                                            <div className="px-3 py-1 rounded-full bg-primary/20 text-[8px] font-black uppercase tracking-widest text-primary">
+                                                {new Date(meeting.created_at) > new Date() ? 'Upcoming' : 'Past'}
+                                            </div>
+                                            <Calendar className="w-4 h-4 text-primary/20" />
+                                        </div>
+                                        
+                                        <h4 className="text-lg font-bold font-serif mb-2 group-hover:text-primary transition-colors line-clamp-2">{meeting.title}</h4>
+                                        
+                                        <div className="space-y-3">
+                                            <div className="flex items-center gap-2 text-[9px] text-foreground/40 font-bold">
+                                                <Clock className="w-3 h-3" />
+                                                <span>{format(new Date(meeting.created_at), 'MMM dd, yyyy · HH:mm')}</span>
+                                            </div>
+                                            
+                                            {/* Attendee Badges */}
+                                            {meeting.attendees_summary && meeting.attendees_summary.length > 0 && (
+                                                <div className="flex flex-wrap gap-2 pt-2 border-t border-border">
+                                                    <div className="w-full text-[8px] font-black uppercase tracking-widest text-foreground/20">Attendees</div>
+                                                    {meeting.attendees_summary.slice(0, 3).map((attendee: any, idx: number) => (
+                                                        <span key={idx} className="px-2 py-1 rounded-full text-[8px] font-black uppercase tracking-widest bg-primary/10 text-primary">
+                                                            {attendee.name || attendee}
+                                                        </span>
+                                                    ))}
+                                                    {meeting.attendees_summary.length > 3 && (
+                                                        <span className="px-2 py-1 rounded-full text-[8px] font-black uppercase tracking-widest bg-surface-highest/20 text-foreground/40">
+                                                            +{meeting.attendees_summary.length - 3}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="py-12 rounded-[32px] bg-surface-low border border-dashed border-border flex flex-col items-center justify-center text-center space-y-4">
+                                <Video className="w-8 h-8 text-foreground/10" />
+                                <div className="space-y-2">
+                                    <div className="text-sm font-serif text-foreground/40 italic">No meetings yet</div>
+                                    <p className="text-[9px] text-foreground/20 font-medium">Your meetings will appear here after they're recorded.</p>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                        {/* Task List */}
+                        {/* Pending Action Items */}
                         <div className="lg:col-span-2 space-y-6">
                            <div className="flex items-center justify-between">
-                                <h3 className="text-2xl font-serif">Task List</h3>
+                                <div className="space-y-2">
+                                    <div className="flex items-center gap-2 text-primary text-[10px] font-black uppercase tracking-widest italic">
+                                        <CheckCircle2 className="w-3 h-3" />
+                                        <span>Pending Items</span>
+                                    </div>
+                                    <h3 className="text-2xl font-serif">Action Items</h3>
+                                </div>
                                 <button onClick={() => router.push('/meetings')} className="text-[9px] font-black uppercase tracking-widest text-primary/60 hover:text-primary transition-colors flex items-center gap-1.5">
-                                    View All <ChevronDown className="w-3 h-3 -rotate-90" />
+                                    View All <ChevronRight className="w-3 h-3" />
                                 </button>
                            </div>
                            <div className="space-y-4">
                                {stats?.recent_actions && stats.recent_actions.length > 0 ? (
-                                   stats.recent_actions.map((action: any, i: number) => (
-                                       <div key={i} className="p-6 rounded-3xl bg-white/[0.01] border border-white/5 flex items-center justify-between group hover:bg-white/[0.03] transition-all">
+                                   stats.recent_actions
+                                       .filter((a: any) => a.status !== 'done' && a.status !== 'completed')
+                                       .slice(0, 8)
+                                       .map((action: any, i: number) => (
+                                       <div key={i} className="p-6 rounded-3xl bg-surface-low border border-border flex items-center justify-between group hover:bg-surface-high transition-all">
                                             <div className="flex items-center gap-6">
-                                                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${action.status === 'done' ? 'bg-primary/10 text-primary' : 'bg-white/5 text-foreground/20'}`}>
+                                                <div className="w-10 h-10 rounded-2xl flex items-center justify-center bg-surface-highest/20 text-foreground/20">
                                                     <CheckCircle2 className="w-5 h-5" />
                                                 </div>
                                                 <div>
-                                                    <div className={`font-bold ${action.status === 'done' ? 'text-foreground/40 line-through' : 'text-foreground/80'}`}>{action.task}</div>
+                                                    <div className="font-bold text-foreground/80">{action.task}</div>
                                                     <div className="flex items-center gap-3 text-[9px] uppercase font-black tracking-widest text-foreground/20 italic">
                                                         <span>{action.owner || 'Unassigned'}</span>
-                                                        <div className="w-1 h-1 rounded-full bg-white/10" />
+                                                        {action.owner_role && (
+                                                            <span className={`px-2 py-0.5 rounded-full ${BOARD_ROLE_COLORS[action.owner_role] || 'bg-foreground/5 text-foreground/40'}`}>
+                                                                {BOARD_ROLES[action.owner_role] || action.owner_role.replace('_', ' ')}
+                                                            </span>
+                                                        )}
+                                                        <div className="w-1 h-1 rounded-full bg-surface-highest/40" />
                                                         <span>Due: {action.deadline || 'N/A'}</span>
                                                     </div>
                                                 </div>
                                             </div>
-                                            <span className={`text-[8px] uppercase font-black tracking-widest px-2 py-0.5 rounded-full ${action.status === 'done' ? 'bg-primary/20 text-primary' : 'bg-white/5 text-foreground/20'}`}>
+                                            <span className="text-[8px] uppercase font-black tracking-widest px-2 py-0.5 rounded-full bg-surface-highest/20 text-foreground/20">
                                                 {action.status || 'Pending'}
                                             </span>
                                        </div>
                                    ))
                                ) : (
-                                   <div className="py-20 rounded-3xl bg-white/[0.01] border border-dashed border-white/10 flex flex-col items-center justify-center text-center space-y-4">
-                                        <Zap className="w-10 h-10 text-foreground/10" />
-                                        <div className="text-[10px] uppercase font-black tracking-widest text-foreground/20">No tasks found.</div>
+                                   <div className="py-20 rounded-3xl bg-surface-low border border-dashed border-border flex flex-col items-center justify-center text-center space-y-4">
+                                        <CheckCircle2 className="w-10 h-10 text-foreground/10" />
+                                        <div className="text-[10px] uppercase font-black tracking-widest text-foreground/20">All tasks completed!</div>
                                    </div>
                                )}
                            </div>
                         </div>
 
-                        {/* Quick Stats sidebar */}
+                        {/* Status & Intelligence Sidebar */}
                         <div className="space-y-6">
                             <h3 className="text-2xl font-serif">Status</h3>
-                            <div className="p-8 rounded-[40px] bg-white/[0.01] border border-white/5 space-y-8">
+                            <div className="p-8 rounded-[40px] bg-surface-low border border-border space-y-8">
                                 <div className="space-y-2">
                                     <div className="flex justify-between text-[10px] font-black uppercase tracking-widest mb-2">
                                         <span className="text-foreground/40">Knowledge Sync</span>
                                         <span className="text-primary">{stats?.total_chunks ? 'Active' : 'Empty'}</span>
                                     </div>
-                                    <div className="h-2 rounded-full bg-white/5 overflow-hidden">
+                                    <div className="h-2 rounded-full bg-surface-highest/20 overflow-hidden">
                                         <div className="h-full bg-primary" style={{ width: stats?.total_chunks > 0 ? '85%' : '0%' }} />
                                     </div>
                                 </div>
                                 <div className="space-y-2">
                                     <div className="flex justify-between text-[10px] font-black uppercase tracking-widest mb-2">
-                                        <span className="text-foreground/40">Operational Trust</span>
-                                        <span className="text-primary">{stats?.quorum || 0}%</span>
+                                        <span className="text-foreground/40">Task Completion</span>
+                                        <span className="text-primary">{stats?.completion_rate || 0}%</span>
                                     </div>
-                                    <div className="h-2 rounded-full bg-white/5 overflow-hidden">
-                                        <div className="h-full bg-primary" style={{ width: `${stats?.quorum || 0}%` }} />
+                                    <div className="h-2 rounded-full bg-surface-highest/20 overflow-hidden">
+                                        <div className="h-full bg-primary" style={{ width: `${stats?.completion_rate || 0}%` }} />
                                     </div>
                                 </div>
-                                <div className="space-y-4 pt-4 border-t border-white/5">
+                                <div className="space-y-4 pt-4 border-t border-border">
                                     <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-foreground/40 italic font-bold">
                                         <Users className="w-4 h-4" />
                                         {stats?.active_members} Team Members
@@ -632,11 +681,147 @@ export default function OrganizationSuite() {
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
 
-            {activeTab === 'governance' && (
-                <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                    {/* Pre-Meeting Intelligence */}
+                    <div className="space-y-6">
+                        <div className="flex items-center justify-between">
+                            <div className="space-y-2">
+                                <div className="flex items-center gap-2 text-primary text-[10px] font-black uppercase tracking-widest italic">
+                                    <Calendar className="w-3 h-3" />
+                                    <span>Intelligence</span>
+                                </div>
+                                <h3 className="text-2xl font-serif">Upcoming Meetings</h3>
+                            </div>
+                            <button onClick={() => setActiveTab('scheduler')} className="text-[9px] font-black uppercase tracking-widest text-primary/60 hover:text-primary transition-colors flex items-center gap-1.5">
+                                Go to Calendar <ChevronRight className="w-3 h-3" />
+                            </button>
+                        </div>
+
+                        {scheduledMeetings.filter((m: any) => new Date(m.scheduled_at || m.created_at) > new Date()).length > 0 ? (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {scheduledMeetings
+                                    .filter((m: any) => new Date(m.scheduled_at || m.created_at) > new Date())
+                                    .slice(0, 4)
+                                    .map((meeting: any, i: number) => (
+                                    <div key={i} className="p-6 rounded-[32px] bg-primary/5 border border-primary/20 space-y-4 hover:bg-primary/10 transition-all group cursor-pointer">
+                                        <div className="flex items-start justify-between">
+                                            <div className="flex-1">
+                                                <div className="px-3 py-1 rounded-full bg-primary/20 text-[8px] font-black uppercase tracking-widest text-primary mb-2 w-fit">
+                                                    Upcoming
+                                                </div>
+                                                <h4 className="text-lg font-bold font-serif mb-1 group-hover:text-primary transition-colors">{meeting.title}</h4>
+                                            </div>
+                                            <Calendar className="w-4 h-4 text-primary/40 mt-1" />
+                                        </div>
+                                        
+                                        <div className="flex items-center gap-2 text-[9px] text-foreground/60 font-bold">
+                                            <Clock className="w-3 h-3" />
+                                            <span>{format(new Date(meeting.scheduled_at || meeting.created_at), 'MMM dd, yyyy · HH:mm')}</span>
+                                        </div>
+
+                                        {/* Pre-read suggestions */}
+                                        <div className="pt-3 border-t border-primary/20 space-y-2">
+                                            <div className="text-[8px] font-black uppercase tracking-widest text-primary/60">Pre-read Documents</div>
+                                            <div className="flex flex-wrap gap-2">
+                                                {stats?.recent_documents && stats.recent_documents.length > 0 ? (
+                                                    stats.recent_documents.map((doc: any, idx: number) => (
+                                                        <span key={idx} className="px-2 py-1 rounded text-[8px] font-bold bg-background/40 text-primary truncate max-w-[150px]" title={doc.filename}>
+                                                            {doc.filename}
+                                                        </span>
+                                                    ))
+                                                ) : (
+                                                    <span className="px-2 py-1 rounded text-[8px] font-bold bg-background/40 text-primary">No pre-reads available</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="py-12 rounded-[32px] bg-surface-low border border-dashed border-border flex flex-col items-center justify-center text-center space-y-4">
+                                <Calendar className="w-8 h-8 text-foreground/10" />
+                                <div className="space-y-2">
+                                    <div className="text-sm font-serif text-foreground/40 italic">No upcoming meetings</div>
+                                    <p className="text-[9px] text-foreground/20 font-medium">Schedule your next meeting in the Calendar tab</p>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Cross-Meeting Insights */}
+                    <div className="space-y-6">
+                        <div className="space-y-2">
+                            <div className="flex items-center gap-2 text-primary text-[10px] font-black uppercase tracking-widest italic">
+                                <TrendingUp className="w-3 h-3" />
+                                <span>Analytics</span>
+                            </div>
+                            <h3 className="text-2xl font-serif">Cross-Meeting Insights</h3>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {/* Recurring Topics */}
+                            <div className="p-6 rounded-[32px] bg-surface-low border border-border space-y-4 hover:bg-surface-high transition-all">
+                                <div className="flex items-center gap-2 text-primary text-[10px] font-black uppercase tracking-widest">
+                                    <TrendingUp className="w-4 h-4" />
+                                    <span>Trending Topics</span>
+                                </div>
+                                <div className="space-y-3">
+                                    {stats?.trending_topics && stats.trending_topics.length > 0 ? stats.trending_topics.map((item: any, i: number) => (
+                                        <div key={i} className="flex items-center justify-between group/topic hover:bg-surface-highest/20 p-2 rounded-xl transition-all cursor-default">
+                                            <span className="text-sm font-medium text-foreground/70 group-hover/topic:text-primary transition-colors">{item.topic || 'Unknown'}</span>
+                                            <span className="text-[8px] font-black px-2 py-1 rounded-full bg-primary/20 text-primary">
+                                                Weight {item.weight || 1}
+                                            </span>
+                                        </div>
+                                    )) : (
+                                        <div className="text-xs text-foreground/40 italic py-4">Gathering insights from recent meetings...</div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Pending Decisions */}
+                            <div className="p-6 rounded-[32px] bg-surface-low border border-border space-y-4 hover:bg-surface-high transition-all">
+                                <div className="flex items-center gap-2 text-primary text-[10px] font-black uppercase tracking-widest">
+                                    <CheckCircle2 className="w-4 h-4" />
+                                    <span>Follow-up Items</span>
+                                </div>
+                                <div className="space-y-3">
+                                    {stats?.pending_decisions && stats.pending_decisions.length > 0 ? stats.pending_decisions.map((decision: any, i: number) => (
+                                        <div key={i} className="p-3 rounded-lg bg-primary/5 border border-primary/10 text-[9px] font-medium leading-relaxed group/decision hover:bg-primary/10 transition-colors">
+                                            <strong className="text-primary group-hover/decision:text-primary/80 transition-colors">Decision Needed:</strong> {decision.task}
+                                        </div>
+                                    )) : (
+                                        <div className="text-xs text-foreground/40 italic py-4">No follow-ups pending.</div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Meeting Frequency */}
+                            <div className="p-6 rounded-[32px] bg-surface-low border border-border space-y-4 hover:bg-surface-high transition-all">
+                                <div className="flex items-center gap-2 text-primary text-[10px] font-black uppercase tracking-widest">
+                                    <Activity className="w-4 h-4" />
+                                    <span>Patterns</span>
+                                </div>
+                                <div className="space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-sm font-medium text-foreground/70">Avg Meeting Duration</span>
+                                        <span className="text-[10px] font-black text-primary">45 min</span>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-sm font-medium text-foreground/70">Attendance Rate</span>
+                                        <span className="text-[10px] font-black text-primary">{stats?.quorum || 0}%</span>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-sm font-medium text-foreground/70">Avg Action Items</span>
+                                        <span className="text-[10px] font-black text-primary">{stats?.recent_actions?.length || 0}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div className="pt-10 border-t border-border mt-10 space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
                     <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
                         <div className="lg:col-span-1 space-y-6">
                             <div className="p-8 rounded-[40px] bg-primary/5 border border-primary/20 space-y-6 relative overflow-hidden group">
@@ -656,7 +841,7 @@ export default function OrganizationSuite() {
                                 </div>
                             </div>
 
-                            <div className="p-8 rounded-[40px] bg-white/[0.01] border border-white/5 space-y-6">
+                            <div className="p-8 rounded-[40px] bg-surface-low border border-border space-y-6">
                                 <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-foreground/30 font-bold">
                                     <Settings className="w-3 h-3" />
                                     <span>Company Settings</span>
@@ -675,7 +860,7 @@ export default function OrganizationSuite() {
 
                         <div className="lg:col-span-3 space-y-8">
                             {/* Invite Members Section */}
-                            <div className="p-10 rounded-[48px] bg-white/[0.01] border border-white/5 space-y-10 group hover:bg-white/[0.02] transition-all">
+                            <div className="p-10 rounded-[48px] bg-surface-low border border-border space-y-10 group hover:bg-surface-low transition-all">
                                 <div className="flex items-center justify-between">
                                     <div className="space-y-2">
                                         <div className="flex items-center gap-2 text-primary text-[10px] font-black uppercase tracking-widest italic">
@@ -689,7 +874,7 @@ export default function OrganizationSuite() {
 
                                 <form onSubmit={handleInviteMember} className="space-y-6">
                                     {!canInvite ? (
-                                        <div className="p-6 rounded-3xl bg-white/[0.02] border border-dashed border-white/10 flex items-center justify-center text-[10px] font-black uppercase tracking-widest text-foreground/20 italic">
+                                        <div className="p-6 rounded-3xl bg-surface-low border border-dashed border-border flex items-center justify-center text-[10px] font-black uppercase tracking-widest text-foreground/20 italic">
                                             Permission Denied: Only CEOs and Managers can send invites.
                                         </div>
                                     ) : (
@@ -702,7 +887,7 @@ export default function OrganizationSuite() {
                                                     placeholder="EX: director@company.com"
                                                     value={inviteEmail}
                                                     onChange={(e) => setInviteEmail(e.target.value)}
-                                                    className="flex-1 h-16 px-6 rounded-2xl bg-white/[0.02] border border-white/5 focus:border-primary focus:bg-white/[0.04] text-foreground outline-none transition-all"
+                                                    className="flex-1 h-16 px-6 rounded-2xl bg-surface-low border border-border focus:border-primary focus:bg-white/[0.04] text-foreground outline-none transition-all"
                                                 />
                                                 <button 
                                                     disabled={isInviting}
@@ -718,7 +903,7 @@ export default function OrganizationSuite() {
                                     {activeInviteLink && (
                                         <div className="p-6 rounded-3xl bg-primary/5 border border-primary/20 space-y-4 animate-in slide-in-from-top-2">
                                             <p className="text-[10px] font-black uppercase tracking-widest text-primary italic font-bold">Direct Invitation Link:</p>
-                                            <div className="flex items-center gap-4 bg-black/40 p-4 rounded-xl border border-white/5 group/link">
+                                            <div className="flex items-center gap-4 bg-black/40 p-4 rounded-xl border border-border group/link">
                                                 <code className="flex-1 text-[10px] text-foreground/60 truncate">{activeInviteLink}</code>
                                                 <button 
                                                     type="button"
@@ -726,7 +911,7 @@ export default function OrganizationSuite() {
                                                         navigator.clipboard.writeText(activeInviteLink);
                                                         alert('Link copied to clipboard!');
                                                     }}
-                                                    className="p-2 rounded-lg hover:bg-white/10 text-primary transition-all active:scale-90"
+                                                    className="p-2 rounded-lg hover:bg-surface-highest/40 text-primary transition-all active:scale-90"
                                                 >
                                                     <Copy className="w-4 h-4" />
                                                 </button>
@@ -781,7 +966,7 @@ export default function OrganizationSuite() {
 
                             <div className="flex items-center justify-between pt-8">
                                 <h2 className="text-3xl font-serif">Member List</h2>
-                                <div className="px-4 py-2 rounded-full border border-white/5 text-[10px] font-black uppercase tracking-widest text-foreground/40 flex items-center gap-2">
+                                <div className="px-4 py-2 rounded-full border border-border text-[10px] font-black uppercase tracking-widest text-foreground/40 flex items-center gap-2">
                                     <Users className="w-4 h-4" />
                                     {members.length} Team Members
                                 </div>
@@ -791,12 +976,12 @@ export default function OrganizationSuite() {
                                 {members.map((member) => {
                                     const boardRole = member.board_role || 'director';
                                     const roleLabel = BOARD_ROLES[boardRole] || boardRole;
-                                    const roleColor = BOARD_ROLE_COLORS[boardRole] || 'bg-white/5 text-foreground/40';
+                                    const roleColor = BOARD_ROLE_COLORS[boardRole] || 'bg-surface-highest/20 text-foreground/40';
                                     const isEditingRole = editingMemberId === member.id;
                                     const isOwnCard = member.id === (userProfile?.id || "");
 
                                     return (
-                                        <div key={member.id} className="p-8 rounded-[48px] border border-white/5 bg-white/[0.01] hover:bg-white/[0.03] transition-all group flex flex-col gap-6 relative overflow-hidden">
+                                        <div key={member.id} className="p-8 rounded-[48px] border border-border bg-surface-low hover:bg-surface-high transition-all group flex flex-col gap-6 relative overflow-hidden">
                                             <div className="flex items-start justify-between">
                                                 <div className="flex items-center gap-4">
                                                     <div className="w-14 h-14 rounded-[24px] bg-primary/5 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
@@ -814,7 +999,7 @@ export default function OrganizationSuite() {
                                                 )}
                                             </div>
 
-                                            <div className="space-y-4 pt-4 border-t border-white/5 flex flex-col gap-3">
+                                            <div className="space-y-4 pt-4 border-t border-border flex flex-col gap-3">
                                                 <div className="flex items-center justify-between">
                                                     <div className="flex items-center gap-2">
                                                         {editingRoleMemberId === member.id ? (
@@ -849,10 +1034,8 @@ export default function OrganizationSuite() {
                         </div>
                     </div>
                 </div>
-            )}
 
-            {activeTab === 'scheduler' && (
-                <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                <div className="pt-10 border-t border-border mt-10 space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
                     <ScheduleMeetingModal
                         isOpen={isSchedulingModalOpen}
                         onClose={() => setIsSchedulingModalOpen(false)}
@@ -899,7 +1082,7 @@ export default function OrganizationSuite() {
                                                      const { data } = await axios.get(`${BACKEND_URL}/api/auth/google/url`);
                                                      if (data?.url) window.location.href = data.url;
                                                  }}
-                                                 className="px-10 py-5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-3xl text-[10px] font-black uppercase tracking-widest text-primary transition-all"
+                                                 className="px-10 py-5 bg-surface-highest/20 hover:bg-surface-highest/40 border border-border rounded-3xl text-[10px] font-black uppercase tracking-widest text-primary transition-all"
                                              >
                                                  Connect Google Calendar
                                              </button>
@@ -908,7 +1091,7 @@ export default function OrganizationSuite() {
                                      {/* Mock Grid for Aesthetic Background - only when disconnected */}
                                      <div className="grid grid-cols-7 w-full h-full opacity-5">
                                          {Array.from({ length: 35 }).map((_, i) => (
-                                             <div key={i} className="border border-white/20 p-8" />
+                                             <div key={i} className="border border-border p-8" />
                                          ))}
                                      </div>
                                  </>
@@ -938,7 +1121,7 @@ export default function OrganizationSuite() {
 
                      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                         {scheduledMeetings.length > 0 ? scheduledMeetings.map((m, i) => (
-                            <div key={i} className="p-8 rounded-[40px] bg-white/[0.01] border border-white/5 space-y-6 group hover:bg-white/[0.03] transition-all">
+                            <div key={i} className="p-8 rounded-[40px] bg-surface-low border border-border space-y-6 group hover:bg-surface-high transition-all">
                                 <div className="flex items-center justify-between">
                                     <div className="px-3 py-1 rounded-full bg-primary/20 text-[8px] font-black uppercase tracking-widest text-primary">Scheduled</div>
                                     <div className="flex items-center gap-2">
@@ -985,14 +1168,13 @@ export default function OrganizationSuite() {
                                 </div>
                             </div>
                         )) : (
-                            <div className="col-span-full py-20 text-center border border-dashed border-white/5 rounded-[40px]">
+                            <div className="col-span-full py-20 text-center border border-dashed border-border rounded-[40px]">
                                 <p className="text-foreground/20 text-[10px] font-black uppercase tracking-widest">No upcoming meetings scheduled via AI.</p>
                             </div>
                         )}
                     </div>
 
                 </div>
-            )}
         </div>
     );
 }

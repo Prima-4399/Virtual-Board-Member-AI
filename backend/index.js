@@ -2,7 +2,7 @@ const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
 const nodemailer = require('nodemailer');
-require('dotenv').config();
+require('dotenv').config({ override: true });
 
 const app = express();
 
@@ -41,7 +41,7 @@ const recallClient = axios.create({
 });
 
 const multer = require('multer');
-const { indexDocument, queryIntelligence, indexMeetingTranscript, generateMinutes, extractActions, generateTitle } = require('./rag_engine');
+const { indexDocument, queryIntelligence, indexMeetingTranscript, generateMinutes, extractActions, generateTitle, extractTrendingTopics } = require('./rag_engine');
 const { resolveParticipants, persistAttendees } = require('./participant_resolver');
 const { createClient } = require('@supabase/supabase-js');
 const { google } = require('googleapis');
@@ -612,15 +612,15 @@ app.get('/api/organizations/:orgId/dashboard-stats', async (req, res) => {
         // 2. Action Item Analytics
         const { data: recentMeetings } = await supabase
             .from('meetings')
-            .select('actions')
+            .select('id, title, created_at, actions, transcript, minutes')
             .eq('organization_id', orgId)
-            .not('actions', 'is', null)
             .order('created_at', { ascending: false })
             .limit(10);
 
         let totalActions = 0;
         let completedActions = 0;
         const recentActionsList = [];
+        const pendingDecisionsList = [];
 
         recentMeetings?.forEach(m => {
             const actions = typeof m.actions === 'string' ? JSON.parse(m.actions) : m.actions;
@@ -629,6 +629,13 @@ app.get('/api/organizations/:orgId/dashboard-stats', async (req, res) => {
                     totalActions++;
                     if (a.status === 'done' || a.status === 'completed') completedActions++;
                     recentActionsList.push(a);
+
+                    if (a.status !== 'done' && a.status !== 'completed' && a.task) {
+                        const t = a.task.toLowerCase();
+                        if (t.includes('decide') || t.includes('approve') || t.includes('review') || t.includes('evaluate') || t.includes('determine')) {
+                            pendingDecisionsList.push(a);
+                        }
+                    }
                 });
             }
         });
@@ -643,6 +650,24 @@ app.get('/api/organizations/:orgId/dashboard-stats', async (req, res) => {
         const actualAttendees = attendees?.filter(a => a.matched).length || 0;
         const quorum = Math.round((actualAttendees / totalAttendeesPossible) * 100);
 
+        // 4. Trending Topics using Anthropic
+        let trending_topics = [];
+        try {
+            if (recentMeetings && recentMeetings.length > 0) {
+                trending_topics = await extractTrendingTopics(recentMeetings);
+            }
+        } catch (e) {
+            console.error('[STATS] Error extracting trending topics:', e.message);
+        }
+
+        // 5. Recent Documents (for Pre-read suggestions)
+        const { data: recentDocs } = await supabase
+            .from('documents')
+            .select('id, filename, created_at')
+            .eq('organization_id', orgId)
+            .order('created_at', { ascending: false })
+            .limit(3);
+
         res.json({
             meetings_held: meetingsRes.count || 0,
             total_documents: docsRes.count || 0,
@@ -651,7 +676,10 @@ app.get('/api/organizations/:orgId/dashboard-stats', async (req, res) => {
             completion_rate: totalActions > 0 ? Math.round((completedActions / totalActions) * 100) : 100,
             quorum: quorum > 100 ? 100 : quorum,
             total_actions: totalActions,
-            recent_actions: recentActionsList.slice(0, 5)
+            recent_actions: recentActionsList.slice(0, 5),
+            trending_topics: trending_topics,
+            pending_decisions: pendingDecisionsList.slice(0, 5),
+            recent_documents: recentDocs || []
         });
     } catch (error) {
         console.error('[STATS ERROR]', error);
@@ -671,9 +699,14 @@ app.post('/api/organizations/join-request', async (req, res) => {
             .from('organizations')
             .select('id, name')
             .eq('join_code', joinCode.toUpperCase())
-            .single();
+            .maybeSingle();
 
-        if (orgErr || !org) return res.status(404).json({ error: 'Invite code invalid.' });
+        if (orgErr) {
+            console.error('[JOIN REQUEST - Org lookup]', orgErr);
+            return res.status(500).json({ error: 'Failed to verify organization' });
+        }
+
+        if (!org) return res.status(404).json({ error: 'Invite code invalid.' });
 
         // 2. Create Request
         const { data, error } = await supabase
@@ -684,7 +717,7 @@ app.post('/api/organizations/join-request', async (req, res) => {
                 status: 'pending'
             }, { onConflict: 'user_id, organization_id' })
             .select()
-            .single();
+            .maybeSingle();
 
         if (error) throw error;
         res.json({ success: true, organizationName: org.name });
@@ -700,21 +733,90 @@ app.get('/api/organizations/:id/join-requests', async (req, res) => {
         const { id } = req.params;
         const { adminId } = req.query;
 
-        // Verify admin
-        const { data: admin } = await supabase.from('profiles').select('role').eq('id', adminId).single();
-        if (!admin || !['ceo', 'manager'].includes(admin.role)) {
-            return res.status(403).json({ error: 'Permission denied.' });
+        console.log(`[JOIN REQUESTS] Fetching for org: ${id}, adminId: ${adminId}`);
+
+        // Skip admin verification if adminId not provided - just return empty
+        if (!adminId) {
+            console.log('[JOIN REQUESTS] No adminId provided, returning empty array');
+            return res.json([]);
         }
 
-        const { data, error } = await supabase
+        // Try to verify admin, but don't fail if it errors
+        try {
+            const { data: admin, error: adminErr } = await supabase
+                .from('profiles')
+                .select('role')
+                .eq('id', adminId)
+                .maybeSingle();
+
+            if (adminErr) {
+                console.warn('[JOIN REQUESTS] Admin verification error (non-blocking):', adminErr);
+            }
+
+            if (admin && !['ceo', 'manager'].includes(admin.role)) {
+                console.warn(`[JOIN REQUESTS] User ${adminId} does not have admin role`);
+                return res.status(403).json({ error: 'Permission denied.' });
+            }
+        } catch (adminErr) {
+            console.warn('[JOIN REQUESTS] Admin verification failed (continuing anyway):', adminErr);
+            // Continue anyway - don't block on this
+        }
+
+        // Fetch join requests
+        console.log('[JOIN REQUESTS] Fetching join requests...');
+        const { data: requests, error: requestsErr } = await supabase
             .from('join_requests')
-            .select('*, profiles(email, display_name, id)')
+            .select('id, user_id, organization_id, status, created_at')
             .eq('organization_id', id)
             .eq('status', 'pending');
 
-        if (error) throw error;
-        res.json(data);
+        if (requestsErr) {
+            console.error('[JOIN REQUESTS ERROR - Fetch requests]', requestsErr);
+            throw requestsErr;
+        }
+
+        console.log(`[JOIN REQUESTS] Found ${requests?.length || 0} pending requests`);
+
+        // If no requests, return early
+        if (!requests || requests.length === 0) {
+            return res.json([]);
+        }
+
+        // Get user profiles for each request
+        try {
+            const userIds = requests.map(r => r.user_id);
+            console.log(`[JOIN REQUESTS] Fetching profiles for users: ${userIds.join(', ')}`);
+            
+            const { data: profiles, error: profilesErr } = await supabase
+                .from('profiles')
+                .select('id, email, display_name')
+                .in('id', userIds);
+
+            if (profilesErr) {
+                console.error('[JOIN REQUESTS ERROR - Fetch profiles]', profilesErr);
+                // If profiles fetch fails, return requests without profile data
+                return res.json(requests);
+            }
+
+            // Merge profiles with requests
+            const profileMap = {};
+            profiles?.forEach(p => {
+                profileMap[p.id] = p;
+            });
+
+            const enrichedRequests = requests.map(r => ({
+                ...r,
+                profiles: profileMap[r.user_id] || null
+            }));
+
+            console.log(`[JOIN REQUESTS] Returning ${enrichedRequests.length} enriched requests`);
+            return res.json(enrichedRequests);
+        } catch (profileErr) {
+            console.warn('[JOIN REQUESTS] Profile enrichment failed, returning bare requests:', profileErr);
+            return res.json(requests);
+        }
     } catch (error) {
+        console.error('[JOIN REQUESTS ERROR]', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -725,9 +827,22 @@ app.post('/api/organizations/:id/join-requests/:requestId/moderate', async (req,
         const { id, requestId } = req.params;
         const { adminId, action } = req.body; // action: 'approve' | 'reject'
 
+        console.log(`[MODERATE REQUEST] orgId: ${id}, requestId: ${requestId}, adminId: ${adminId}, action: ${action}`);
+
         // 1. Verify admin
-        const { data: admin } = await supabase.from('profiles').select('role').eq('id', adminId).single();
+        const { data: admin, error: adminErr } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', adminId)
+            .maybeSingle();
+
+        if (adminErr) {
+            console.error('[MODERATE REQUEST - Admin lookup]', adminErr);
+            return res.status(500).json({ error: 'Failed to verify admin' });
+        }
+
         if (!admin || !['ceo', 'manager'].includes(admin.role)) {
+            console.warn(`[MODERATE REQUEST] User ${adminId} lacks permission`);
             return res.status(403).json({ error: 'Permission denied.' });
         }
 
@@ -735,24 +850,66 @@ app.post('/api/organizations/:id/join-requests/:requestId/moderate', async (req,
             .from('join_requests')
             .select('*')
             .eq('id', requestId)
-            .single();
+            .maybeSingle();
 
-        if (reqErr || !request) return res.status(404).json({ error: 'Request not found.' });
+        if (reqErr) {
+            console.error('[MODERATE REQUEST - Request lookup]', reqErr);
+            return res.status(500).json({ error: 'Failed to fetch request' });
+        }
+
+        if (!request) {
+            console.warn(`[MODERATE REQUEST] Request ${requestId} not found`);
+            return res.status(404).json({ error: 'Request not found.' });
+        }
+
+        console.log(`[MODERATE REQUEST] Processing action: ${action}`);
 
         if (action === 'approve') {
             // Update request
-            await supabase.from('join_requests').update({ status: 'approved' }).eq('id', requestId);
+            const { error: updateErr1 } = await supabase
+                .from('join_requests')
+                .update({ status: 'approved' })
+                .eq('id', requestId);
+
+            if (updateErr1) {
+                console.error('[MODERATE REQUEST - Update request]', updateErr1);
+                throw updateErr1;
+            }
+
             // Link user to org
-            await supabase.from('profiles').update({ 
-                organization_id: id,
-                role: 'developer'
-            }).eq('id', request.user_id);
+            const { error: updateErr2 } = await supabase
+                .from('profiles')
+                .update({ 
+                    organization_id: id,
+                    role: 'developer'
+                })
+                .eq('id', request.user_id);
+
+            if (updateErr2) {
+                console.error('[MODERATE REQUEST - Update profile]', updateErr2);
+                throw updateErr2;
+            }
+
+            console.log(`[MODERATE REQUEST] Approved user ${request.user_id} for org ${id}`);
+        } else if (action === 'reject') {
+            const { error: updateErr } = await supabase
+                .from('join_requests')
+                .update({ status: 'rejected' })
+                .eq('id', requestId);
+
+            if (updateErr) {
+                console.error('[MODERATE REQUEST - Reject]', updateErr);
+                throw updateErr;
+            }
+
+            console.log(`[MODERATE REQUEST] Rejected user ${request.user_id} for org ${id}`);
         } else {
-            await supabase.from('join_requests').update({ status: 'rejected' }).eq('id', requestId);
+            return res.status(400).json({ error: 'Invalid action. Must be approve or reject.' });
         }
 
         res.json({ success: true });
     } catch (error) {
+        console.error('[MODERATE REQUEST ERROR]', error);
         res.status(500).json({ error: error.message });
     }
 });

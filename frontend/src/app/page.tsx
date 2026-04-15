@@ -15,14 +15,14 @@ export default function Home() {
         <div className="space-y-6">
           <div className="flex items-center justify-center gap-2 px-4 py-1.5 rounded-full border border-border bg-surface-low w-fit mx-auto shadow-sm">
             <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-            <span className="text-[10px] uppercase font-black tracking-widest text-primary">AI Meeting Assistant 1.0</span>
+            <span className="text-[10px] uppercase font-black tracking-widest text-primary">Board Intelligence System 1.0</span>
           </div>
           <h1 className="text-6xl md:text-8xl font-serif font-medium tracking-tight text-foreground/90 leading-[0.9]">
             The Future of <br />
-            <span className="text-primary italic">Team Meetings</span>
+            <span className="text-primary italic">Executive Boards</span>
           </h1>
           <p className="max-w-2xl mx-auto text-lg text-foreground/40 font-medium font-serif italic">
-            Transcribe, search, and analyze your meetings with a smart AI helper.
+            Securely transcribe, analyze, and automate your board meetings with a dedicated AI director.
           </p>
         </div>
 
@@ -37,8 +37,8 @@ export default function Home() {
                 <Video className="w-8 h-8" />
               </div>
               <div>
-                <h2 className="text-3xl font-serif font-medium text-foreground">Meeting Center</h2>
-                <p className="text-foreground/40 text-sm mt-1 font-medium font-serif italic">Meeting Recorder & Speaker ID</p>
+                <h2 className="text-3xl font-serif font-medium text-foreground">Board Meetings</h2>
+                <p className="text-foreground/40 text-sm mt-1 font-medium font-serif italic">Recording & Speaker Identification</p>
               </div>
             </div>
 

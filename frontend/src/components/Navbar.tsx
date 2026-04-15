@@ -90,7 +90,7 @@ export default function Navbar() {
     });
 
     return (
-        <nav className="fixed top-0 left-0 right-0 h-20 border-b border-white/5 bg-background/80 backdrop-blur-xl z-50 px-8 flex items-center justify-between">
+        <nav className="fixed top-0 left-0 right-0 h-20 border-b border-border bg-background/80 backdrop-blur-xl z-50 px-8 flex items-center justify-between">
             <div className="flex items-center gap-12">
                 {/* Brand */}
                 <Link href="/" className="flex items-center gap-3 group">
@@ -117,7 +117,7 @@ export default function Navbar() {
                                 href={item.path}
                                 className={`flex items-center gap-3 px-6 py-2.5 rounded-2xl transition-all duration-300 relative group ${isActive
                                     ? 'bg-primary/10 text-primary'
-                                    : 'text-foreground/40 hover:text-foreground/60 hover:bg-white/5'
+                                    : 'text-foreground/40 hover:text-foreground/60 hover:bg-surface-highest/20'
                                     }`}
                             >
                                 <item.icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-primary' : 'text-foreground/20'}`} />
@@ -144,7 +144,7 @@ export default function Navbar() {
                         </div>
                         <button
                             onClick={handleLogout}
-                            className="p-2.5 rounded-xl border border-white/5 bg-white/5 hover:bg-red-500/10 hover:text-red-400 text-foreground/40 transition-all group"
+                            className="p-2.5 rounded-xl border border-border bg-surface-highest/20 hover:bg-red-500/10 hover:text-red-400 text-foreground/40 transition-all group"
                             title="Logout"
                         >
                             <LogOut className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
@@ -153,7 +153,7 @@ export default function Navbar() {
                     </div>
                 ) : (
                     <div className="flex items-center gap-2">
-                        <Link href="/login" className="px-5 py-2.5 rounded-2xl text-[10px] uppercase font-black tracking-widest text-foreground hover:bg-white/5 transition-all">Login</Link>
+                        <Link href="/login" className="px-5 py-2.5 rounded-2xl text-[10px] uppercase font-black tracking-widest text-foreground hover:bg-surface-highest/20 transition-all">Login</Link>
                         <Link href="/signup" className="px-5 py-2.5 rounded-2xl text-[10px] uppercase font-black tracking-widest bg-primary text-background hover:bg-primary/95 transition-all">Register</Link>
                     </div>
                 )}

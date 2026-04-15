@@ -475,6 +475,81 @@ Examples: "Q2 Revenue Review", "New Hire Approvals", "Strategic Partnership Disc
     }
 }
 
+async function extractTrendingTopics(meetings) {
+    if (!meetings || meetings.length === 0) return [];
+
+    // Sort meetings by date (newest first)
+    const sortedMeetings = meetings.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 5);
+
+    // Construct prompt
+    let promptContent = "Here are the recent meeting transcripts, sorted from newest to oldest. You must give MORE WEIGHT to topics discussed in the newer meetings.\n\n";
+
+    sortedMeetings.forEach((m, index) => {
+        const dateStr = new Date(m.created_at).toISOString().split('T')[0];
+        let textToUse = "";
+        if (m.transcript && typeof m.transcript !== 'string') {
+            try {
+                textToUse = JSON.stringify(m.transcript);
+            } catch (e) {}
+        } else if (m.transcript) {
+            textToUse = m.transcript;
+        } else if (m.minutes) {
+             textToUse = m.minutes;
+        }
+
+        promptContent += `--- MEETING ${index + 1} (Date: ${dateStr}) [NEWEST = ${index === 0 ? 'YES' : 'NO'}] ---\nTitle: ${m.title}\nContent:\n${textToUse ? textToUse.substring(0, 4000) : 'No transcript available.'}\n\n`;
+    });
+
+    const systemPrompt = `Analyze the provided meeting transcripts and extract the top 3-5 trending topics.
+You MUST give significantly more weight and importance to topics discussed in the newer (more recent) meetings.
+Return ONLY a JSON array of objects with these keys:
+- "topic": name of the topic (e.g. "Q2 Budget Review", "Hiring")
+- "weight": an integer from 1 to 10 representing its relative strength/frequency
+Format: [{"topic": "...", "weight": 5}]
+If no topics, return []. No markdown markers or preamble.`;
+
+    try {
+        console.log('[TRENDS] Attempting Claude extraction...');
+        if (!process.env.ANTHROPIC_API_KEY) throw new Error('Key missing');
+        
+        const { Anthropic } = require('@anthropic-ai/sdk');
+        const anthropicHeader = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY.trim() });
+        const response = await anthropicHeader.messages.create({
+            model: process.env.ANTHROPIC_MODEL || "claude-3-5-sonnet-20241022",
+            max_tokens: 500,
+            system: systemPrompt,
+            messages: [{ role: "user", content: promptContent }]
+        });
+
+        const text = response.content[0].text;
+        const topics = JSON.parse(text.substring(text.indexOf('['), text.lastIndexOf(']') + 1));
+        return topics.filter(t => t.topic && t.topic.trim().length > 0);
+    } catch (err) {
+        console.warn('[TRENDS] Claude failed, trying Groq fallback...', err.message);
+        try {
+            if (!process.env.GROQ_API_KEY) throw new Error('GROQ Key missing');
+            const axios = require('axios');
+            const groqRes = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
+                model: process.env.GROQ_MODEL || "llama-3.1-70b-versatile",
+                messages: [
+                    { role: "system", content: systemPrompt },
+                    { role: "user", content: promptContent }
+                ],
+                response_format: { type: "json_object" }
+            }, {
+                headers: { 'Authorization': `Bearer ${process.env.GROQ_API_KEY}` }
+            });
+            const text = groqRes.data.choices[0].message.content;
+            const data = JSON.parse(text.substring(text.indexOf('{'), text.lastIndexOf('}') + 1));
+            const finalTopics = Array.isArray(data) ? data : (data.topics || []);
+            return finalTopics.filter(t => t.topic && t.topic.trim().length > 0);
+        } catch (groqErr) {
+            console.error('[TRENDS FAILURE]', groqErr.message);
+            return []; // Fallback to empty array
+        }
+    }
+}
+
 module.exports = {
     indexDocument,
     indexMeetingTranscript,
@@ -483,6 +558,7 @@ module.exports = {
     generateMinutes,
     extractActions,
     generateTitle,
+    extractTrendingTopics,
     formatRole,
     BOARD_ROLE_LABELS
 };

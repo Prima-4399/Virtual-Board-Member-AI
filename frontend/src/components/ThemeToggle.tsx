@@ -9,7 +9,7 @@ export default function ThemeToggle() {
     return (
         <button
             onClick={toggleTheme}
-            className="p-2.5 rounded-xl border border-white/5 bg-white/5 hover:bg-primary/10 hover:text-primary text-foreground/40 transition-all group flex items-center justify-center"
+            className="p-2.5 rounded-xl border border-border bg-surface-highest/20 hover:bg-primary/10 hover:text-primary text-foreground/40 transition-all group flex items-center justify-center"
             title={theme === 'light' ? 'Switch to Midnight Archive' : 'Switch to Traditional Paper'}
         >
             {theme === 'light' ? (

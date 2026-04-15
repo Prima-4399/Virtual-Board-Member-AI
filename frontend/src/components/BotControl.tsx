@@ -417,7 +417,7 @@ export default function BotControl() {
                         {activeTab === 'transcript' ? (
                             transcript.map((entry: any, i: number) => {
                                 const speakerInfo = attendeesMap[entry.participant.name]
-                                const roleColor = speakerInfo?.roleKey ? (BOARD_ROLE_COLORS[speakerInfo.roleKey] || 'bg-white/5 text-foreground/40') : ''
+                                const roleColor = speakerInfo?.roleKey ? (BOARD_ROLE_COLORS[speakerInfo.roleKey] || 'bg-surface-highest/20 text-foreground/40') : ''
                                 return (
                                 <div key={i} className="group p-8 bg-background rounded-2xl border border-border hover:border-primary/40 transition-all shadow-sm">
                                     <div className="flex items-center justify-between mb-4">
@@ -509,7 +509,7 @@ export default function BotControl() {
                                 <div className="space-y-4">
                                     {actions.length > 0 ? (
                                         actions.map((action, idx) => (
-                                            <div key={idx} className={`p-6 rounded-2xl border transition-all flex items-start justify-between group ${action.status === 'done' ? 'bg-primary/5 border-primary/20 opacity-60' : 'bg-surface-high border-white/5 hover:border-primary/20'}`}>
+                                            <div key={idx} className={`p-6 rounded-2xl border transition-all flex items-start justify-between group ${action.status === 'done' ? 'bg-primary/5 border-primary/20 opacity-60' : 'bg-surface-high border-border hover:border-primary/20'}`}>
                                                 <div className="flex items-start gap-4">
                                                     <button onClick={() => toggleActionStatus(idx)} className={`mt-1 w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${action.status === 'done' ? 'bg-primary border-primary text-background' : 'border-muted/30 hover:border-primary/50'}`}>
                                                         {action.status === 'done' && <CheckCircle className="w-4 h-4" />}
@@ -524,7 +524,7 @@ export default function BotControl() {
                                                                 {action.owner || 'Unassigned'}
                                                             </div>
                                                             {action.owner_role && action.owner_role !== 'guest' && (
-                                                                <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest ${BOARD_ROLE_COLORS[action.owner_role] || 'bg-white/5 text-foreground/40'}`}>
+                                                                <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest ${BOARD_ROLE_COLORS[action.owner_role] || 'bg-surface-highest/20 text-foreground/40'}`}>
                                                                     {action.owner_role.replace(/_/g, ' ')}
                                                                 </div>
                                                             )}
