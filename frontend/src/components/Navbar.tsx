@@ -61,6 +61,14 @@ export default function Navbar() {
     };
 
     const [userRole, setUserRole] = useState<string | null>(null);
+    const [brand, setBrand] = useState<{name: string, logo: string}>({ name: 'COGNIIFY', logo: '/Cogniify.png' });
+
+    useEffect(() => {
+        if (typeof window !== 'undefined' && window.location.hostname.toLowerCase().includes('persistent')) {
+            setBrand({ name: 'PERSISTENT', logo: '/Persistent.png' });
+        }
+    }, []);
+
 
     useEffect(() => {
         const getProfile = async () => {
@@ -77,11 +85,12 @@ export default function Navbar() {
     }, [user, supabase]);
 
     const navItems = [
+        { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', description: 'Overview' },
         { name: 'Meeting Center', icon: Video, path: '/meeting', description: 'Live meetings' },
         { name: 'AI Assistant', icon: Cpu, path: '/chat', description: 'Talk to AI' },
         { name: 'Past Meetings', icon: History, path: '/meetings', description: 'See history' },
         { name: 'Documents', icon: BookOpen, path: '/memory', description: 'Your files' },
-        { name: 'Settings', icon: LayoutDashboard, path: '/organization', description: 'Account & Team' },
+        { name: 'Settings', icon: Settings, path: '/organization', description: 'Account & Team' },
     ].filter(item => {
         if (userRole === 'intern') {
             return item.path === '/chat' || item.path === '/organization';
@@ -94,15 +103,17 @@ export default function Navbar() {
             <div className="flex items-center gap-12">
                 {/* Brand */}
                 <Link href="/" className="flex items-center gap-3 group">
-                    <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-background font-black text-xl shadow-lg shadow-primary/20 transition-transform group-hover:scale-105">
-                        VB
-                    </div>
-                    <div>
-                        <h1 className="text-lg font-black tracking-tighter text-foreground leading-none">VIRTUAL BOARD</h1>
+                    <img 
+                        src={brand.logo} 
+                        alt={brand.name} 
+                        className="w-10 h-10 rounded-xl shadow-lg shadow-primary/20 transition-transform group-hover:scale-105 object-contain" 
+                    />
+                    <div className="flex flex-col gap-0.5">
+                        <h1 className="text-base font-black tracking-tighter text-foreground leading-none">{brand.name}</h1>
                         {user ? (
-                            <span className="text-[10px] uppercase tracking-[0.2em] font-bold text-primary">{userRole ? userRole.toUpperCase() : 'AI Helper'}</span>
+                            <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-primary leading-none">{userRole ? userRole.toUpperCase() : 'AI Helper'}</span>
                         ) : (
-                            <span className="text-[10px] uppercase tracking-[0.2em] font-bold text-foreground/40 italic">Please Log In</span>
+                            <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-foreground/40 italic leading-none">Please Log In</span>
                         )}
                     </div>
                 </Link>
