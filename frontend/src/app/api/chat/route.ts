@@ -1,10 +1,8 @@
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 
 export async function POST(req: Request) {
     try {
-        const { message, organization_id } = await req.json();
+        const { message, organization_id, conversation_context } = await req.json();
         const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
 
         // Delegate query to the established RAG engine in the backend
@@ -13,7 +11,8 @@ export async function POST(req: Request) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 query: message,
-                organization_id
+                organization_id,
+                conversation_context: conversation_context || ''
             })
         });
 
@@ -23,8 +22,8 @@ export async function POST(req: Request) {
         }
 
         const data = await response.json();
-        
-        return NextResponse.json({ 
+
+        return NextResponse.json({
             reply: data.answer,
             sources: data.sources || [],
             engine: 'executive_rag_v2'
@@ -32,9 +31,9 @@ export async function POST(req: Request) {
 
     } catch (error: any) {
         console.error('Advisory Critical Error:', error);
-        return NextResponse.json({ 
+        return NextResponse.json({
             reply: "My apologies, our institutional memory link was momentarily interrupted. Please ensure the backend engine is active.",
-            error: error.message 
+            error: error.message
         }, { status: 500 });
     }
 }

@@ -166,7 +166,7 @@ async function searchMemory(query, orgId, topK = 5) {
     return data;
 }
 
-async function queryIntelligence(userQuery, orgId) {
+async function queryIntelligence(userQuery, orgId, conversationContext = '') {
     if (!process.env.ANTHROPIC_API_KEY) {
         console.error('[RAG] ANTHROPIC_API_KEY is missing from .env!');
         throw new Error('API Key Missing');
@@ -230,25 +230,50 @@ async function queryIntelligence(userQuery, orgId) {
 
     const contextText = filteredContext?.map(r => r.content).join('\n\n---\n\n') || "";
 
+    // Fetch recent meetings for meeting-aware responses
+    const { data: recentMeetings } = await supabase
+        .from('meetings')
+        .select('title, minutes, actions, attendees_summary, created_at')
+        .eq('organization_id', orgId)
+        .not('minutes', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+    const meetingContext = recentMeetings?.map(m => {
+        const date = new Date(m.created_at).toLocaleDateString('en-US', {
+            weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+            hour: 'numeric', minute: '2-digit'
+        });
+        const attendeeNames = m.attendees_summary?.map(a => `${a.name}${a.board_role ? ' (' + a.board_role + ')' : ''}`).join(', ') || 'Unknown';
+        const actionsText = m.actions?.map(a => `- ${a.task} (Owner: ${a.owner})`).join('\n') || 'None';
+        const minutesTruncated = (m.minutes || '').replace(/<[^>]*>/g, ' ').substring(0, 1200);
+        return `MEETING: ${m.title}\nDATE: ${date}\nATTENDEES: ${attendeeNames}\nSUMMARY:\n${minutesTruncated}\nACTION ITEMS:\n${actionsText}`;
+    }).join('\n\n---\n\n') || '';
+
     const prompt = `
-You are the Virtual Board Member AI. Your goal is to provide accurate advisor reasoning based ONCE AND ONLY ON the institutional memory provided.
+You are the AI Assistant for this organization. You answer questions STRICTLY based on the data provided below. You have access to two sources: saved documents and past meeting records.
 
 ${explicitFileMention}
-Institutional Memory:
-${contextText || "NO RELEVANT DATA FOUND IN VAULT."}
+${meetingContext ? `RECENT MEETINGS:\n${meetingContext}\n\n` : ''}SAVED DOCUMENTS:
+${contextText || "No relevant documents found."}
 
-CRITICAL RULES:
-1. IF NO RELEVANT DATA IS FOUND, state: "I found the document reference, but I have no indexed data on that topic in the vault."
-2. NEVER make up facts or "guess" contents.
-3. NEVER USE ASTERISKS (*) or UNDERSCORES (_).
-4. USE <mark>TOKEN</mark> for numeric values and <u>TOKEN</u> for dates/locations.
-5. MAX LENGTH: 150 words.
+STRICT GUARDRAILS:
+1. ONLY use information from the RECENT MEETINGS and SAVED DOCUMENTS sections above.
+2. If the answer is NOT found in the provided data, say: "I don't have information on that in your saved documents or meeting history."
+3. NEVER invent, assume, or hallucinate facts, figures, names, or dates.
+4. NEVER reference external knowledge or general information not present in the data above.
+5. For meeting questions ("last meeting", "Tuesday's meeting", etc.), use the RECENT MEETINGS section and cite the meeting title and date.
+6. For document questions, cite the document name when possible.
 
-User Query: ${userQuery}
+FORMATTING RULES:
+1. Use plain, readable text. No special formatting symbols.
+2. NEVER use asterisks (*), underscores (_), hash symbols (#), or pipe characters (|).
+3. NEVER use <mark>, <u>, or any HTML tags.
+4. Use simple bullet points with dashes (-) for lists.
+5. Use plain text for emphasis, no bold or italic markers.
+6. Keep responses clear, conversational, and concise.
 
-RESPONSE STRUCTURE:
-[One sentence overview]
-- [Category]: <u>[Date]</u> | <mark>[Value]</mark> | [Reason]
+${conversationContext ? `CONVERSATION HISTORY (for context continuity):\n${conversationContext}\n\n` : ''}User Query: ${userQuery}
 `;
 
     try {
@@ -276,7 +301,7 @@ RESPONSE STRUCTURE:
             const groqRes = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
                 model: process.env.GROQ_MODEL || "llama-3.1-8b-instant",
                 messages: [
-                    { role: "system", content: "You are the Virtual Board Member AI. Respond in HTML correctly as requested." },
+                    { role: "system", content: "You are an AI assistant. Answer ONLY based on the data provided. Never invent facts. Use plain text only, no markdown symbols or HTML tags." },
                     { role: "user", content: prompt }
                 ],
                 max_tokens: 1024

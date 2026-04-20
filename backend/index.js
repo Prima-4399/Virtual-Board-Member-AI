@@ -281,10 +281,10 @@ app.post('/api/documents/upload', upload.single('file'), async (req, res) => {
 // Query Historical Memory
 app.post('/api/documents/query', async (req, res) => {
     try {
-        const { query, organization_id } = req.body;
+        const { query, organization_id, conversation_context } = req.body;
         if (!query) return res.status(400).json({ error: 'Query is required' });
 
-        const result = await queryIntelligence(query, organization_id);
+        const result = await queryIntelligence(query, organization_id, conversation_context);
         res.json(result);
     } catch (error) {
         console.error('RAG Query Error:', error);
