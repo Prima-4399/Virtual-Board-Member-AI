@@ -6,12 +6,20 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ShieldCheck, ArrowRight, Loader2, UserPlus, Mail, Lock, CheckCircle2 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, Suspense } from 'react';
 import axios from 'axios';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
 
 export default function SignupPage() {
+    return (
+        <Suspense fallback={<div className="flex items-center justify-center min-h-[60vh]"><div className="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full animate-spin" /></div>}>
+            <SignupForm />
+        </Suspense>
+    );
+}
+
+function SignupForm() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [joinCode, setJoinCode] = useState('');
