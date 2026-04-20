@@ -61,11 +61,16 @@ export default function Navbar() {
     };
 
     const [userRole, setUserRole] = useState<string | null>(null);
-    const [brand, setBrand] = useState<{name: string, logo: string}>({ name: 'COGNIIFY', logo: '/Cogniify.png' });
+    const [brand, setBrand] = useState<{name: string, logo: string}>({ name: 'COGNIIFY', logo: '/cogniify_logo.png' });
 
     useEffect(() => {
-        if (typeof window !== 'undefined' && window.location.hostname.toLowerCase().includes('persistent')) {
-            setBrand({ name: 'PERSISTENT', logo: '/Persistent.png' });
+        if (typeof window !== 'undefined') {
+            const hostname = window.location.hostname.toLowerCase();
+            if (hostname.includes('persistent')) {
+                setBrand({ name: 'PERSISTENT', logo: '/persistent_logo.png' });
+            } else {
+                setBrand({ name: 'COGNIIFY', logo: '/cogniify_logo.png' });
+            }
         }
     }, []);
 
@@ -108,12 +113,12 @@ export default function Navbar() {
                         alt={brand.name} 
                         className="w-10 h-10 rounded-xl shadow-lg shadow-primary/20 transition-transform group-hover:scale-105 object-contain" 
                     />
-                    <div className="flex flex-col gap-0.5">
+                    <div className="flex flex-col gap-1">
                         <h1 className="text-base font-black tracking-tighter text-foreground leading-none">{brand.name}</h1>
                         {user ? (
-                            <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-primary leading-none">{userRole ? userRole.toUpperCase() : 'AI Helper'}</span>
+                            <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary leading-none">{userRole ? userRole.toUpperCase() : 'AI Helper'}</span>
                         ) : (
-                            <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-foreground/40 italic leading-none">Please Log In</span>
+                            <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground/40 italic leading-none">Please Log In</span>
                         )}
                     </div>
                 </Link>
