@@ -61,17 +61,17 @@ export default function Navbar() {
     };
 
     const [userRole, setUserRole] = useState<string | null>(null);
-    const [brand, setBrand] = useState<{name: string, logo: string | null}>({ name: 'COGNIIFY', logo: '/cogniify_logo.png' });
+    const [brand, setBrand] = useState<{name: string, logo: string | null, isAma: boolean}>({ name: 'COGNIIFY', logo: '/cogniify_logo.png', isAma: false });
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
             const hostname = window.location.hostname.toLowerCase();
             if (hostname.includes('persistent')) {
-                setBrand({ name: 'PERSISTENT', logo: '/persistent_logo.png' });
+                setBrand({ name: 'PERSISTENT', logo: '/persistent_logo.png', isAma: false });
             } else if (hostname.includes('ama')) {
-                setBrand({ name: 'AMA GLOBAL', logo: null });
+                setBrand({ name: 'AMA GLOBAL', logo: null, isAma: true });
             } else {
-                setBrand({ name: 'COGNIIFY', logo: '/cogniify_logo.png' });
+                setBrand({ name: 'COGNIIFY', logo: '/cogniify_logo.png', isAma: false });
             }
         }
     }, []);
@@ -118,11 +118,27 @@ export default function Navbar() {
                         />
                     )}
                     <div className="flex flex-col gap-1">
-                        <h1 className="text-base font-black tracking-tighter text-foreground leading-none">{brand.name}</h1>
+                        <h1
+                            className="text-base font-bold tracking-tight leading-none"
+                            style={brand.isAma ? { color: '#00AEEF', fontFamily: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif', fontWeight: 700, letterSpacing: '-0.025em' } : {}}
+                        >
+                            {!brand.isAma && <span className="font-black tracking-tighter text-foreground">{brand.name}</span>}
+                            {brand.isAma && brand.name}
+                        </h1>
                         {user ? (
-                            <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary leading-none">{userRole ? userRole.toUpperCase() : 'AI Helper'}</span>
+                            <span
+                                className="text-[10px] font-semibold uppercase leading-none"
+                                style={brand.isAma ? { fontFamily: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif', letterSpacing: '0.05em', marginTop: '0.25rem' } : { letterSpacing: '0.2em' }}
+                            >
+                                <span className={brand.isAma ? 'text-foreground/50' : 'text-primary'}>{userRole ? userRole.toUpperCase() : 'AI Helper'}</span>
+                            </span>
                         ) : (
-                            <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground/40 italic leading-none">Please Log In</span>
+                            <span
+                                className="text-[10px] font-semibold uppercase italic leading-none"
+                                style={brand.isAma ? { fontFamily: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif', letterSpacing: '0.05em', marginTop: '0.25rem' } : { letterSpacing: '0.2em' }}
+                            >
+                                <span className={brand.isAma ? 'text-foreground/40' : 'text-foreground/40'}>Please Log In</span>
+                            </span>
                         )}
                     </div>
                 </Link>
@@ -169,7 +185,6 @@ export default function Navbar() {
                         >
                             <LogOut className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
                         </button>
-                        <ThemeToggle />
                     </div>
                 ) : (
                     <div className="flex items-center gap-2">
@@ -177,6 +192,7 @@ export default function Navbar() {
                         <Link href="/signup" className="px-5 py-2.5 rounded-2xl text-[10px] uppercase font-black tracking-widest bg-primary text-background hover:bg-primary/95 transition-all">Register</Link>
                     </div>
                 )}
+                <ThemeToggle />
             </div>
         </nav>
     );
